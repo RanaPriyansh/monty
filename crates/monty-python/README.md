@@ -165,7 +165,7 @@ The directory then persists across feeds, including successful `os.chdir(path=..
 `os.getcwd()` and `Path.cwd()` report it, and relative `open()`, `os`, and `pathlib` requests resolve against it.
 Setting `cwd` does not grant filesystem access; provide `mount=` or `os=` to handle filesystem operations.
 
-## Virtual filesystem
+## OS access
 
 With [`OSAccess`](https://pydantic.dev/docs/monty/concepts/filesystem/#a-virtual-filesystem), renaming an existing path to itself leaves the in-memory filesystem unchanged. A missing source still raises `FileNotFoundError`.
 
