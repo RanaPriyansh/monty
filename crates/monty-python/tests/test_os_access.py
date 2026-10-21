@@ -1408,20 +1408,20 @@ def test_cpython_rename_paths_to_themselves(tmp_path: Path):
     """CPython treats file and directory self-renames as no-ops."""
     file = tmp_path / 'file.txt'
     file.write_text('content')
-    assert file.rename(file) == file
-    assert file.read_text() == 'content'
+    assert (file.rename(file) == file) == snapshot(True)
+    assert file.read_text() == snapshot('content')
 
     empty_dir = tmp_path / 'empty'
     empty_dir.mkdir()
-    assert empty_dir.rename(empty_dir) == empty_dir
-    assert list(empty_dir.iterdir()) == []
+    assert (empty_dir.rename(empty_dir) == empty_dir) == snapshot(True)
+    assert list(empty_dir.iterdir()) == snapshot([])
 
     nonempty_dir = tmp_path / 'nonempty'
     nonempty_dir.mkdir()
     child = nonempty_dir / 'child.txt'
     child.write_text('child')
-    assert nonempty_dir.rename(nonempty_dir) == nonempty_dir
-    assert child.read_text() == 'child'
+    assert (nonempty_dir.rename(nonempty_dir) == nonempty_dir) == snapshot(True)
+    assert child.read_text() == snapshot('child')
 
 
 @pytest.mark.parametrize('via_monty', [False, True])
@@ -1448,14 +1448,14 @@ def test_rename_file_to_itself(via_monty: bool, source: str, target: str, monty_
         assert result == snapshot(('content', 7, 'updated'))
     else:
         fs.path_rename(P(source), P(target))
-        assert fs.path_read_text(P('/test/file.txt')) == 'content'
-        assert fs.path_write_text(P('/test/file.txt'), 'updated') == 7
+        assert fs.path_read_text(P('/test/file.txt')) == snapshot('content')
+        assert fs.path_write_text(P('/test/file.txt'), 'updated') == snapshot(7)
 
-    assert file.deleted is False
-    assert file.path == P('/test/file.txt')
-    assert fs.path_exists(P('/test/file.txt')) is True
-    assert fs.path_iterdir(P('/test')) == [P('/test/file.txt')]
-    assert fs.path_read_text(P('/test/file.txt')) == 'updated'
+    assert (file.deleted is False) == snapshot(True)
+    assert file.path.as_posix() == snapshot('/test/file.txt')
+    assert (fs.path_exists(P('/test/file.txt')) is True) == snapshot(True)
+    assert [path.as_posix() for path in fs.path_iterdir(P('/test'))] == snapshot(['/test/file.txt'])
+    assert fs.path_read_text(P('/test/file.txt')) == snapshot('updated')
 
 
 @pytest.mark.parametrize('via_monty', [False, True])
@@ -1478,13 +1478,15 @@ def test_rename_directory_to_itself(via_monty: bool, nonempty: bool, monty_run: 
     else:
         fs.path_rename(P('/test/dir'), P('/test/dir'))
 
-    assert fs.path_is_dir(P('/test/dir')) is True
-    assert set(fs.path_iterdir(P('/test'))) == {P('/test/dir'), P('/test/keep.txt')}
-    expected_children = [P('/test/dir/child.txt')] if nonempty else []
-    assert fs.path_iterdir(P('/test/dir')) == expected_children
-    assert fs.path_read_text(P('/test/keep.txt')) == 'keep'
+    assert (fs.path_is_dir(P('/test/dir')) is True) == snapshot(True)
+    assert {path.as_posix() for path in fs.path_iterdir(P('/test'))} == snapshot({'/test/dir', '/test/keep.txt'})
     if nonempty:
-        assert fs.path_read_text(P('/test/dir/child.txt')) == 'child'
+        assert [path.as_posix() for path in fs.path_iterdir(P('/test/dir'))] == snapshot(['/test/dir/child.txt'])
+    else:
+        assert fs.path_iterdir(P('/test/dir')) == snapshot([])
+    assert fs.path_read_text(P('/test/keep.txt')) == snapshot('keep')
+    if nonempty:
+        assert fs.path_read_text(P('/test/dir/child.txt')) == snapshot('child')
 
 
 @pytest.mark.parametrize('via_monty', [False, True])
@@ -1505,8 +1507,8 @@ def test_rename_missing_path_to_itself_still_fails(via_monty: bool, monty_run: R
         with pytest.raises(FileNotFoundError):
             fs.path_rename(P('/test/missing'), P('/test/missing'))
 
-    assert set(fs.path_iterdir(P('/test'))) == {P('/test/keep.txt')}
-    assert fs.path_read_text(P('/test/keep.txt')) == 'keep'
+    assert {path.as_posix() for path in fs.path_iterdir(P('/test'))} == snapshot({'/test/keep.txt'})
+    assert fs.path_read_text(P('/test/keep.txt')) == snapshot('keep')
 
 
 def test_rename_source_not_found_direct():

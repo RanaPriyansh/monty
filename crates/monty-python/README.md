@@ -167,7 +167,8 @@ Setting `cwd` does not grant filesystem access; provide `mount=` or `os=` to han
 
 ## OS access
 
-With [`OSAccess`](https://pydantic.dev/docs/monty/concepts/filesystem/#a-virtual-filesystem), renaming an existing path to itself leaves the in-memory filesystem unchanged. A missing source still raises `FileNotFoundError`.
+With [`OSAccess`][pydantic_monty.OSAccess] ([virtual filesystem guide](https://pydantic.dev/docs/monty/concepts/filesystem/#a-virtual-filesystem)), renaming an existing path to itself leaves the in-memory filesystem unchanged.
+A missing source still raises `FileNotFoundError`.
 
 `OSAccess(max_urandom_bytes=...)` sets the largest `os.urandom()` request the default handler serves, 1 MiB by default.
 Larger requests raise `MemoryError` before allocating.

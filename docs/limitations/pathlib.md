@@ -54,7 +54,9 @@ These yield an `OsCall` for the host to resolve:
 Other exceptions propagate.
 A relative target remains relative in the returned value; the host receives an absolute path resolved against the cwd.
 On host backends, `Path.rename()` and `Path.replace()` use the same host rename operation, so overwrite behavior depends on the backend
-(see [os.md](os.md)); for in-memory behavior, see the [OSAccess contract](../filesystem.md#a-virtual-filesystem).
+(see [os.md](os.md)).
+For in-memory behavior, see the [`OSAccess`][pydantic_monty.OSAccess] contract.
+Read the [virtual filesystem guide](../filesystem.md#a-virtual-filesystem) for more information.
 
 `Path.glob()`, `Path.rglob()` and `Path.walk()` count only the visible parameters in arity errors, excluding bound `self`.
 
