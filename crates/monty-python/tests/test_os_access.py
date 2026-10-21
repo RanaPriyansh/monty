@@ -9,7 +9,7 @@ For tests of the AbstractOS interface via custom subclasses, see test_os_access_
 
 import datetime
 import time
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 from unittest.mock import Mock
 
@@ -1402,6 +1402,111 @@ def test_rename_file_direct():
     assert fs.path_exists(P('/test/old.txt')) is False
     assert fs.path_exists(P('/test/new.txt')) is True
     assert fs.path_read_text(P('/test/new.txt')) == 'content'
+
+
+def test_cpython_rename_paths_to_themselves(tmp_path: Path):
+    """CPython treats file and directory self-renames as no-ops."""
+    file = tmp_path / 'file.txt'
+    file.write_text('content')
+    assert file.rename(file) == file
+    assert file.read_text() == 'content'
+
+    empty_dir = tmp_path / 'empty'
+    empty_dir.mkdir()
+    assert empty_dir.rename(empty_dir) == empty_dir
+    assert list(empty_dir.iterdir()) == []
+
+    nonempty_dir = tmp_path / 'nonempty'
+    nonempty_dir.mkdir()
+    child = nonempty_dir / 'child.txt'
+    child.write_text('child')
+    assert nonempty_dir.rename(nonempty_dir) == nonempty_dir
+    assert child.read_text() == 'child'
+
+
+@pytest.mark.parametrize('via_monty', [False, True])
+@pytest.mark.parametrize(
+    ('source', 'target'),
+    [
+        ('/test/file.txt', '/test/file.txt'),
+        ('/test//file.txt', '/test/file.txt'),
+        ('/test/./file.txt', '/test/file.txt'),
+    ],
+)
+def test_rename_file_to_itself(via_monty: bool, source: str, target: str, monty_run: RunMonty):
+    """Self-renaming a file preserves its host object and contents."""
+    file = MemoryFile('/test/file.txt', content='content')
+    fs = OSAccess([file])
+
+    if via_monty:
+        result = monty_run(
+            f"from pathlib import Path; Path('{source}').rename(Path('{target}')); "
+            "path = Path('/test/file.txt'); before = path.read_text(); "
+            "written = path.write_text('updated'); (before, written, path.read_text())",
+            os=fs,
+        )
+        assert result == snapshot(('content', 7, 'updated'))
+    else:
+        fs.path_rename(P(source), P(target))
+        assert fs.path_read_text(P('/test/file.txt')) == 'content'
+        assert fs.path_write_text(P('/test/file.txt'), 'updated') == 7
+
+    assert file.deleted is False
+    assert file.path == P('/test/file.txt')
+    assert fs.path_exists(P('/test/file.txt')) is True
+    assert fs.path_iterdir(P('/test')) == [P('/test/file.txt')]
+    assert fs.path_read_text(P('/test/file.txt')) == 'updated'
+
+
+@pytest.mark.parametrize('via_monty', [False, True])
+@pytest.mark.parametrize('nonempty', [False, True])
+def test_rename_directory_to_itself(via_monty: bool, nonempty: bool, monty_run: RunMonty):
+    """Self-renaming an empty or nonempty directory preserves its tree."""
+    files = [MemoryFile('/test/keep.txt', content='keep')]
+    if nonempty:
+        files.append(MemoryFile('/test/dir/child.txt', content='child'))
+    fs = OSAccess(files)
+    if not nonempty:
+        fs.path_mkdir(P('/test/dir'), parents=False, exist_ok=False)
+
+    if via_monty:
+        result = monty_run(
+            "from pathlib import Path; Path('/test/dir').rename(Path('/test/dir')); Path('/test/dir').exists()",
+            os=fs,
+        )
+        assert result == snapshot(True)
+    else:
+        fs.path_rename(P('/test/dir'), P('/test/dir'))
+
+    assert fs.path_is_dir(P('/test/dir')) is True
+    assert set(fs.path_iterdir(P('/test'))) == {P('/test/dir'), P('/test/keep.txt')}
+    expected_children = [P('/test/dir/child.txt')] if nonempty else []
+    assert fs.path_iterdir(P('/test/dir')) == expected_children
+    assert fs.path_read_text(P('/test/keep.txt')) == 'keep'
+    if nonempty:
+        assert fs.path_read_text(P('/test/dir/child.txt')) == 'child'
+
+
+@pytest.mark.parametrize('via_monty', [False, True])
+def test_rename_missing_path_to_itself_still_fails(via_monty: bool, monty_run: RunMonty):
+    """A self-rename still checks that its source exists."""
+    fs = OSAccess([MemoryFile('/test/keep.txt', content='keep')])
+
+    if via_monty:
+        with pytest.raises(MontyRuntimeError) as exc_info:
+            monty_run(
+                "from pathlib import Path; Path('/test/missing').rename(Path('/test/missing'))",
+                os=fs,
+            )
+        assert str(exc_info.value) == snapshot(
+            "FileNotFoundError: [Errno 2] No such file or directory: '/test/missing' -> '/test/missing'"
+        )
+    else:
+        with pytest.raises(FileNotFoundError):
+            fs.path_rename(P('/test/missing'), P('/test/missing'))
+
+    assert set(fs.path_iterdir(P('/test'))) == {P('/test/keep.txt')}
+    assert fs.path_read_text(P('/test/keep.txt')) == 'keep'
 
 
 def test_rename_source_not_found_direct():

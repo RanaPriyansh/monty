@@ -1275,9 +1275,18 @@ class OSAccess(AbstractOS):
             return StatResult.dir_stat()
 
     def path_rename(self, path: PurePosixPath, target: PurePosixPath) -> None:
+        """Rename a file or directory in the in-memory filesystem.
+
+        Renaming an existing path to the same `PurePosixPath` leaves the filesystem state unchanged.
+
+        Raises:
+            FileNotFoundError: If the source path does not exist.
+        """
         src_entry = self._get_entry(path)
         if src_entry is None:
             raise FileNotFoundError(f'[Errno 2] No such file or directory: {str(path)!r} -> {str(target)!r}')
+        if PurePosixPath(path) == PurePosixPath(target):
+            return
 
         parent_dir = self._parent_entry(path)
         assert _is_dir(parent_dir), f'Expected parent of a file to always be a directory, got {parent_dir}'

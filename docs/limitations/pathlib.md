@@ -53,8 +53,8 @@ These yield an `OsCall` for the host to resolve:
 `Path.unlink(missing_ok=True)` suppresses `FileNotFoundError` from mounts and custom callbacks.
 Other exceptions propagate.
 A relative target remains relative in the returned value; the host receives an absolute path resolved against the cwd.
-Both methods use the same host rename operation, so overwrite behavior depends on the backend
-(see [os.md](os.md)).
+On host backends, `Path.rename()` and `Path.replace()` use the same host rename operation, so overwrite behavior depends on the backend
+(see [os.md](os.md)); for in-memory behavior, see the [OSAccess contract](../filesystem.md#a-virtual-filesystem).
 
 `Path.glob()`, `Path.rglob()` and `Path.walk()` count only the visible parameters in arity errors, excluding bound `self`.
 
