@@ -190,3 +190,5 @@ Return the generated values or `rng.getstate()` instead.
 
 See the [`pydantic-monty`](https://pypi.org/project/pydantic-monty/) README for
 more details.
+
+[pydantic_monty.OSAccess]: https://pydantic.dev/docs/monty/api/python/os/#pydantic_monty.OSAccess
