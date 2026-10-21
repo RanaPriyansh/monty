@@ -3150,6 +3150,8 @@ fn reset_works_from_unconfigured_ready_and_awaiting_stubs_states() {
         protocol_version: PROTOCOL_VERSION,
         ..Default::default()
     });
+    assert_eq!(child.feed_complete("old_global = 7"), MontyObject::none());
+    assert_eq!(child.feed_complete("old_global"), MontyObject::int(7));
     let (_, event) = child.feed("from external_pkg import value");
     assert!(matches!(
         event,
