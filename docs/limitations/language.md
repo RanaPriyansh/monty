@@ -187,9 +187,24 @@ attribute tagging for later discovery all have no equivalent.
 
 Monty does not recognize a new enclosing local introduced only by a lambda default.
 
-In the verified case, a nested function that declares that name `nonlocal` raises `SyntaxError: no binding for nonlocal 'name' found`.
+For example, Monty raises `SyntaxError: no binding for nonlocal 'name' found` for this code:
 
-CPython accepts the same code.
+```python test="skip"
+def outer():
+    assert (lambda value=(name := 0): value)() == 0
+
+    def inner():
+        nonlocal name
+        name += 1
+
+    inner()
+    return name
+
+
+assert outer() == 1
+```
+
+CPython accepts this code, and `outer()` returns `1`.
 
 ## Ordering comparisons
 

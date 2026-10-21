@@ -4,7 +4,7 @@ def name_0():
         name_5 += 1
 
     name_3()
-    print(name_5)
+    assert name_5 == 1
 
 
 name_0()
