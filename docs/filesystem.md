@@ -355,8 +355,6 @@ Returning a handle answers only `open`; reads and writes are separate callbacks,
 
 [`OSAccess`][pydantic_monty.OSAccess] backed by [`MemoryFile`][pydantic_monty.MemoryFile] objects is fully sandboxed: content lives in host memory, path traversal cannot escape
 to real files, and `os.getenv` sees only the `environ` mapping you passed.
-For `OSAccess`, renaming an existing path to the same path leaves its state unchanged.
-A missing source still raises `FileNotFoundError`.
 
 [`CallbackFile`][pydantic_monty.CallbackFile] read and write callbacks run in the host and can reach real resources.
 That is the point of it, but it means an `OSAccess` containing a `CallbackFile` is exactly as sandboxed as the callback

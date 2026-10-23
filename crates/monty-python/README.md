@@ -165,11 +165,6 @@ The directory then persists across feeds, including successful `os.chdir(path=..
 `os.getcwd()` and `Path.cwd()` report it, and relative `open()`, `os`, and `pathlib` requests resolve against it.
 Setting `cwd` does not grant filesystem access; provide `mount=` or `os=` to handle filesystem operations.
 
-## OS access
-
-With [`OSAccess`][pydantic_monty.OSAccess] ([virtual filesystem guide](https://pydantic.dev/docs/monty/concepts/filesystem/#a-virtual-filesystem)), renaming an existing path to itself leaves the in-memory filesystem unchanged.
-A missing source still raises `FileNotFoundError`.
-
 `OSAccess(max_urandom_bytes=...)` sets the largest `os.urandom()` request the default handler serves, 1 MiB by default.
 Larger requests raise `MemoryError` before allocating.
 Unseeded `random` generators request host entropy only under `os_policy={'random_start': 'call_host'}`.
@@ -190,5 +185,3 @@ Return the generated values or `rng.getstate()` instead.
 
 See the [`pydantic-monty`](https://pypi.org/project/pydantic-monty/) README for
 more details.
-
-[pydantic_monty.OSAccess]: https://pydantic.dev/docs/monty/api/python/os/#pydantic_monty.OSAccess
