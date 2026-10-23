@@ -304,6 +304,7 @@ Plain `resume(...)` bypasses both mounts and the handler, using only the supplie
 
 `pydantic_monty` ships a ready-made [`AbstractOS`][pydantic_monty.AbstractOS] implementation for when you want a filesystem with no host directory
 behind it at all.
+
 JavaScript has no equivalent class, so the TypeScript tab answers the same operations from a `Map` in an `os` callback:
 
 === "Python"

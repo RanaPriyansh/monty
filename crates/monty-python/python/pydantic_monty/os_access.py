@@ -1082,6 +1082,9 @@ class OSAccess(AbstractOS):
                 else:
                     raise ValueError(f'Cannot put file {file} within sub-directory of file {entry}')
 
+            entry = subtree.get(name)
+            if _is_dir(entry):
+                raise ValueError(f'Cannot put file {file} at path of directory {entry}')
             subtree[name] = file
 
     def __repr__(self) -> str:
@@ -1275,12 +1278,9 @@ class OSAccess(AbstractOS):
             return StatResult.dir_stat()
 
     def path_rename(self, path: PurePosixPath, target: PurePosixPath) -> None:
-        """Rename a file or directory in the in-memory filesystem.
+        """Rename a file or directory.
 
-        Renaming an existing path to the same `PurePosixPath` leaves the filesystem state unchanged.
-
-        Raises:
-            FileNotFoundError: If the source path does not exist.
+        Renaming a path to itself is a no-op; moving a directory into its own subtree raises `OSError`.
         """
         src_entry = self._get_entry(path)
         if src_entry is None:
@@ -1313,6 +1313,8 @@ class OSAccess(AbstractOS):
             assert _is_dir(src_entry), 'src path must be a directory here'
             if _is_file(target_entry):
                 raise NotADirectoryError(f'[Errno 20] Not a directory: {str(path)!r} -> {str(target)!r}')
+            elif PurePosixPath(path) in PurePosixPath(target).parents:
+                raise OSError(f'[Errno 22] Invalid argument: {str(path)!r} -> {str(target)!r}')
             elif _is_dir(target_entry) and target_entry:
                 raise OSError(f'[Errno 66] Directory not empty: {str(path)!r} -> {str(target)!r}')
 
