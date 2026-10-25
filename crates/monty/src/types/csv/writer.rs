@@ -381,7 +381,7 @@ fn append_field(
     Ok(written)
 }
 
-/// `PyNumber_Check`: the numeric types a `QUOTE_NONNUMERIC` writer leaves unquoted.
+/// `PyNumber_Check`: built-in numbers and instances with `__int__`, `__float__`, or `__index__`, without conversions.
 fn is_number(value: &Value, vm: &VM<'_>) -> bool {
     match value.py_type(vm) {
         Type::Int | Type::Float | Type::Bool | Type::Complex => true,
