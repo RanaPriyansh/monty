@@ -96,6 +96,9 @@ macro_rules! heap_payloads {
             /// Boxed: a name, an annotation and a default or factory are already
             /// wider than the 32-bit ceiling, and `Field` has attributes left to gain.
             DataclassField(boxed $crate::modules::dataclasses::DataclassField),
+            /// A method `@dataclass` generated into a class namespace.
+            /// Boxed: its `__init__` form carries every field's captured default.
+            DataclassMethod(boxed $crate::modules::dataclasses::DataclassMethod),
             /// A `list_iterator` object.
             ListIterator(inline $crate::types::list::ListIterator),
             /// A `_collections._deque_iterator` object.
@@ -173,6 +176,14 @@ macro_rules! heap_payloads {
             DirScan(boxed $crate::types::DirScan),
             /// Any `csv` object: a reader, writer, `DictReader`, `DictWriter` or dialect.
             Csv(boxed $crate::types::CsvObject),
+            /// A `decimal.Decimal` value.
+            Decimal(inline $crate::types::decimal::Decimal),
+            /// A mutable `decimal.Context`.
+            DecimalContext(inline $crate::types::decimal::DecContext),
+            /// A context's `flags` or `traps` mapping.
+            DecimalSignalDict(inline $crate::types::decimal::py_context::SignalDict),
+            /// The manager `decimal.localcontext()` returns.
+            DecimalContextManager(inline $crate::types::decimal::py_context::ContextManager),
         }
     };
 }
@@ -245,6 +256,7 @@ impl HeapData {
             | Self::Instance(_)
             | Self::BoundMethod(_)
             | Self::DataclassField(_)
+            | Self::DataclassMethod(_)
             | Self::ListIterator(_)
             | Self::DequeIterator(_)
             | Self::TupleIterator(_)
@@ -286,7 +298,12 @@ impl HeapData {
             | Self::TimeDelta(_)
             | Self::TimeZone(_)
             | Self::Random(_)
-            | Self::HashObject(_) => false,
+            | Self::HashObject(_)
+            // A signal dict and a `localcontext()` manager only hold contexts, which are leaves.
+            | Self::Decimal(_)
+            | Self::DecimalContext(_)
+            | Self::DecimalSignalDict(_)
+            | Self::DecimalContextManager(_) => false,
         }
     }
 
@@ -303,6 +320,7 @@ impl HeapData {
             self,
             Self::Class(_)
                 | Self::BoundMethod(_)
+                | Self::DataclassMethod(_)
                 | Self::Closure(_)
                 | Self::FunctionDefaults(_)
                 | Self::ExtFunction(_)
@@ -350,6 +368,7 @@ impl HeapData {
             Self::Instance(instance) => Type::Instance(instance.class()),
             Self::BoundMethod(_) => Type::Function,
             Self::DataclassField(_) => Type::DataclassField,
+            Self::DataclassMethod(_) => Type::Function,
             Self::DataclassParams(_) => Type::DataclassParams,
             Self::LongInt(_) => Type::Int,
             Self::Complex(_) => Type::Complex,
@@ -378,6 +397,10 @@ impl HeapData {
             Self::Itertools(i) => i.py_type(),
             Self::DirScan(scan) => scan.py_type(),
             Self::Csv(csv) => csv.py_type(),
+            Self::Decimal(_) => Type::Decimal,
+            Self::DecimalContext(_) => Type::DecimalContext,
+            Self::DecimalSignalDict(_) => Type::DecimalSignalDict,
+            Self::DecimalContextManager(_) => Type::DecimalContextManager,
         }
     }
 }
@@ -708,6 +731,7 @@ macro_rules! heap_read_output_py_trait_forward {
             Self::Instance($value) => $body,
             Self::BoundMethod($value) => $body,
             Self::DataclassField($value) => $body,
+            Self::DataclassMethod($value) => $body,
             Self::DataclassParams($value) => $body,
             Self::Complex($value) => $body,
             Self::Path($value) => $body,
@@ -722,6 +746,10 @@ macro_rules! heap_read_output_py_trait_forward {
             Self::Closure($value) => $body,
             Self::FunctionDefaults($value) => $body,
             Self::ExtFunction($value) => $body,
+            Self::Decimal($value) => $body,
+            Self::DecimalContext($value) => $body,
+            Self::DecimalSignalDict($value) => $body,
+            Self::DecimalContextManager($value) => $body,
             $($custom)*
         }
     };
@@ -958,6 +986,7 @@ impl<'h> PyTrait<'h> for HeapReadOutput<'h> {
             Self::Instance(value) => value.py_iter(vm),
             Self::BoundMethod(value) => value.py_iter(vm),
             Self::DataclassField(value) => value.py_iter(vm),
+            Self::DataclassMethod(value) => value.py_iter(vm),
             Self::DataclassParams(value) => value.py_iter(vm),
             Self::Path(value) => value.py_iter(vm),
             Self::OpenFile(value) => value.py_iter(vm),
@@ -968,7 +997,11 @@ impl<'h> PyTrait<'h> for HeapReadOutput<'h> {
             Self::Time(value) => value.py_iter(vm),
             Self::TimeDelta(value) => value.py_iter(vm),
             Self::TimeZone(value) => value.py_iter(vm),
-            Self::NamedTupleClass(_)
+            Self::DecimalSignalDict(value) => value.py_iter(vm),
+            Self::Decimal(_)
+            | Self::DecimalContext(_)
+            | Self::DecimalContextManager(_)
+            | Self::NamedTupleClass(_)
             | Self::Closure(_)
             | Self::FunctionDefaults(_)
             | Self::ExtFunction(_)
@@ -1024,6 +1057,7 @@ impl<'h> PyTrait<'h> for HeapReadOutput<'h> {
             Self::Instance(value) => value.py_next(vm),
             Self::BoundMethod(value) => value.py_next(vm),
             Self::DataclassField(value) => value.py_next(vm),
+            Self::DataclassMethod(value) => value.py_next(vm),
             Self::DataclassParams(value) => value.py_next(vm),
             Self::Path(value) => value.py_next(vm),
             Self::OpenFile(value) => value.py_next(vm),

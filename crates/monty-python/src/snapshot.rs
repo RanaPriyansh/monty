@@ -1366,20 +1366,28 @@ impl PyAsyncFutureSnapshot {
     /// `resume_auto` calls to settle, delivers them, and drives to the next
     /// snapshot. Raises if there are no pending coroutines to await — e.g. on a
     /// snapshot restored via `load_snapshot`, whose spawned coroutines lived in
-    /// the previous process (resolve those manually with `resume({...})`).
+    /// the previous process — without consuming it; resolve those manually.
     fn resume_auto<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let ctx = self.0.snapshot.claim(py)?;
-        future_into_py(py, async move {
-            let resolved = {
-                let mut join_set = ctx.pending_futures.lock().await;
-                wait_for_futures(&mut join_set).await
+        let (ctx, mut join_set) = self.0.snapshot.claim_with(py, |ctx| {
+            let join_set = Arc::clone(&ctx.pending_futures)
+                .try_lock_owned()
+                .map_err(|_| PyRuntimeError::new_err("snapshot session is busy"))?;
+            if join_set.is_empty() {
+                Err(PyRuntimeError::new_err(
+                    "No pending async tasks but ResolveFutures requested",
+                ))
+            } else {
+                Ok(join_set)
             }
-            .and_then(|results| {
+        })?;
+        future_into_py(py, async move {
+            let resolved = wait_for_futures(&mut join_set).await.and_then(|results| {
                 results
                     .into_iter()
                     .map(|(call_id, result)| Ok((call_id, ext_to_resume(result)?)))
                     .collect::<PyResult<Vec<_>>>()
             });
+            drop(join_set);
             let results = match resolved {
                 Ok(results) => results,
                 Err(err) => {

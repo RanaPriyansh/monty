@@ -1082,6 +1082,9 @@ class OSAccess(AbstractOS):
                 else:
                     raise ValueError(f'Cannot put file {file} within sub-directory of file {entry}')
 
+            entry = subtree.get(name)
+            if _is_dir(entry):
+                raise ValueError(f'Cannot put file {file} at path of directory {entry}')
             subtree[name] = file
 
     def __repr__(self) -> str:
@@ -1181,19 +1184,16 @@ class OSAccess(AbstractOS):
         return len(data)
 
     def _append(self, path: PurePosixPath, data: bytes | str) -> None:
+        """Append without decoding stored bytes; preserve text storage for text-only writes."""
         entry = self._get_entry(path)
         if _is_file(entry):
             content = entry.read_content()
-            if isinstance(data, str):
-                # path_append_text: write back str so a text-backed file
-                # stays text-backed. Bytes-backed files are decoded first
-                # so the storage type tracks the most recent write rather
-                # than silently converting all writes to bytes.
-                text_content = content if isinstance(content, str) else content.decode()
-                entry.write_content(text_content + data)
+            if isinstance(content, str) and isinstance(data, str):
+                entry.write_content(content + data)
             else:
                 bytes_content = content if isinstance(content, bytes) else content.encode()
-                entry.write_content(bytes_content + data)
+                bytes_data = data if isinstance(data, bytes) else data.encode()
+                entry.write_content(bytes_content + bytes_data)
         elif _is_dir(entry):
             raise IsADirectoryError(f'[Errno 21] Is a directory: {str(path)!r}')
         else:
@@ -1275,9 +1275,15 @@ class OSAccess(AbstractOS):
             return StatResult.dir_stat()
 
     def path_rename(self, path: PurePosixPath, target: PurePosixPath) -> None:
+        """Rename a file or directory.
+
+        Renaming a path to itself is a no-op; moving a directory into its own subtree raises `OSError`.
+        """
         src_entry = self._get_entry(path)
         if src_entry is None:
             raise FileNotFoundError(f'[Errno 2] No such file or directory: {str(path)!r} -> {str(target)!r}')
+        if PurePosixPath(path) == PurePosixPath(target):
+            return
 
         parent_dir = self._parent_entry(path)
         assert _is_dir(parent_dir), f'Expected parent of a file to always be a directory, got {parent_dir}'
@@ -1304,6 +1310,8 @@ class OSAccess(AbstractOS):
             assert _is_dir(src_entry), 'src path must be a directory here'
             if _is_file(target_entry):
                 raise NotADirectoryError(f'[Errno 20] Not a directory: {str(path)!r} -> {str(target)!r}')
+            elif PurePosixPath(path) in PurePosixPath(target).parents:
+                raise OSError(f'[Errno 22] Invalid argument: {str(path)!r} -> {str(target)!r}')
             elif _is_dir(target_entry) and target_entry:
                 raise OSError(f'[Errno 66] Directory not empty: {str(path)!r} -> {str(target)!r}')
 

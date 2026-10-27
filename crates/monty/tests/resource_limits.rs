@@ -13,6 +13,58 @@ use monty_types::{
     ResourceTracker,
 };
 
+/// Terminal errors must cross each native caller before unwinding its Python frame.
+#[test]
+fn terminal_error_respects_synchronous_reentry_boundaries() {
+    let code = "\
+def fail():
+    return ''.ljust(width, 'é')
+
+def middle():
+    for value in iter(fail, None):
+        pass
+
+def outer():
+    for value in iter(middle, None):
+        pass
+
+outer()
+";
+    let mut runner = MontyRun::new(
+        code.to_owned(),
+        "test.py",
+        vec!["width".to_owned()],
+        CompileOptions::default(),
+    )
+    .unwrap();
+    // Twice this width exceeds StringBuilder's capacity ceiling without attempting an allocation.
+    let width = isize::MAX as usize / 2 + 1;
+    let error = runner
+        .run_no_limits(vec![MontyObject::int(i64::try_from(width).unwrap())])
+        .expect_err("oversized padding must return a terminal MemoryError");
+    assert_eq!(error.exc_type(), ExcType::MemoryError);
+    let message = error
+        .message()
+        .unwrap()
+        .replace(&(width * 2).to_string(), "<requested>")
+        .replace(&isize::MAX.to_string(), "<limit>");
+    insta::assert_snapshot!(message, @"memory limit exceeded: <requested> bytes > <limit> bytes");
+    let frames: Vec<_> = error
+        .traceback()
+        .iter()
+        .map(|frame| (frame.frame_name.as_deref(), frame.start.line))
+        .collect();
+    assert_eq!(
+        frames,
+        vec![
+            (Some("<module>"), 12),
+            (Some("outer"), 9),
+            (Some("middle"), 5),
+            (Some("fail"), 2)
+        ]
+    );
+}
+
 /// Resolves consecutive `NameLookup` yields by providing a `Function` object for each name.
 ///
 /// External functions are no longer declared upfront. Instead, the VM yields `NameLookup`

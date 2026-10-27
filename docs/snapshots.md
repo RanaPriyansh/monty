@@ -372,7 +372,10 @@ Calling a loader after a feed or a previous load is rejected before restoration,
     Any `'overlay'` writes made before the dump are gone — the restored overlay starts empty.
 - **A restored [`FutureSnapshot`][pydantic_monty.FutureSnapshot] cannot be driven with `resume_auto()`.** Its pending coroutines lived in the previous
     process.
-    Resolve them by hand with `resume({call_id: ...})`.
+    In Python and JavaScript, rejecting automatic resolution when no host coroutines or promises are registered leaves
+    the snapshot and session available for manual resolution.
+    Resolve them by hand with `resume({call_id: ...})` in Python or `resume([{callId, value}])` in JavaScript.
+    The same applies to a JavaScript future created with `resumeFuture()` when no host promises were registered.
 - **A dump is your own session state, not untrusted input.** Loading checks the magic, the version, the size cap and the
     structural invariants the interpreter relies on (function metadata, for one), but it is not a security boundary:
     load only dumps this host produced.
@@ -382,8 +385,11 @@ Calling a loader after a feed or a previous load is rejected before restoration,
     reordering named fields, keeps the version, so its builds still load dumps written by earlier releases at that
     version.
     A release that changes what stored data means, such as the bytecode, bumps the version and says so in its release
-    notes; a build then refuses dumps from before the bump as too old, and the session has to be rebuilt by replaying
-    its feeds.
+    notes.
+    Older builds then refuse the new dumps as too new.
+    Where the old data still holds everything the new meaning needs, the newer build upgrades older dumps as it loads
+    them: version 14 builds load version 13 dumps from 1.0 and 1.1, generating the methods their dataclasses lack.
+    Otherwise it refuses them as too old, and the session has to be rebuilt by replaying its feeds.
     The same bytes load in-process, in a subprocess and over WebSocket.
 
 ## Async

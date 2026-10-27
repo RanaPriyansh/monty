@@ -304,6 +304,7 @@ Plain `resume(...)` bypasses both mounts and the handler, using only the supplie
 
 `pydantic_monty` ships a ready-made [`AbstractOS`][pydantic_monty.AbstractOS] implementation for when you want a filesystem with no host directory
 behind it at all.
+
 JavaScript has no equivalent class, so the TypeScript tab answers the same operations from a `Map` in an `os` callback:
 
 === "Python"
@@ -351,6 +352,11 @@ For JavaScript `open` callbacks, return `new MontyFileHandle(path, mode, { posit
 The marker canonicalizes `mode` and exposes `path`, `mode`, `position`, `binary`, `readable` and `writable`.
 Paths are virtual POSIX paths; `position` defaults to zero.
 Returning a handle answers only `open`; reads and writes are separate callbacks, never operations on a live host descriptor.
+
+Text appends through `OSAccess` preserve the file's storage type: `str` stays `str`, and `bytes` stays `bytes`.
+For bytes-backed files, only the appended text is UTF-8 encoded; existing bytes are not decoded.
+For `CallbackFile`, a text append calls the read callback first.
+The write callback then receives the full content (existing plus appended) in the stored type.
 
 [`OSAccess`][pydantic_monty.OSAccess] backed by [`MemoryFile`][pydantic_monty.MemoryFile] objects is fully sandboxed: content lives in host memory, path traversal cannot escape
 to real files, and `os.getenv` sees only the `environ` mapping you passed.

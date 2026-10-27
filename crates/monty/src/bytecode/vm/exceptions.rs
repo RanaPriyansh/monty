@@ -457,18 +457,15 @@ impl VM<'_> {
         }
     }
 
-    /// Unwinds the call stack to collect all frames for a traceback.
-    ///
-    /// Used for terminal resource errors that can't be handled
-    /// but still need a complete traceback showing all active call frames.
+    /// Collects terminal-error traceback frames up to the next synchronous boundary.
+    /// Native callers must release their borrows before their Python frames are unwound.
     fn unwind_for_traceback(&mut self, mut error: RunError) -> RunError {
         // Pop frames and add caller frame info to the traceback
         while !self.suspended_frames.is_empty() {
             // Get the caller's call-site offset before popping frame
             let call_offset = self.current_frame().call_offset;
 
-            // Pop this frame (cleans up namespace, etc.)
-            self.pop_frame();
+            let should_return = self.pop_frame();
 
             // Add caller frame info to traceback. Resolve the offset against the
             // caller, which is the current frame after the pop above.
@@ -482,6 +479,9 @@ impl VM<'_> {
                     RunError::UncatchableExc(exc) => exc.add_caller_frame(pos, frame_name),
                     RunError::Internal(_) => {}
                 }
+            }
+            if should_return {
+                break;
             }
         }
         error

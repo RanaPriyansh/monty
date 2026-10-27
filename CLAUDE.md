@@ -251,6 +251,12 @@ Frozen function code is also persisted: Rust calls its captured entry signature,
 Incompatible changes to either calling convention require compatibility handling or a version bump, including changes
 to argument order or meaning.
 Compatible source-body changes do not require a bump; restored sessions retain their captured implementations.
+When the old data still holds everything the new meaning needs, bump `DUMP_VERSION` but keep
+`MIN_SUPPORTED_DUMP_VERSION`, and convert in one of two places so the live heap never carries a legacy form:
+a `#[serde(from = "Dumped…")]` shim when one value's stored shape changed (see `TableCursor`), or an upgrade in
+`dump_upgrade.rs`, which `Dump::load` runs over an older dump's heap and interns; its module docs list the rules.
+The first upgrade is `modules/dataclasses/legacy.rs` (version 13), tested against the `dataclasses_v13*.bin` fixtures
+the 1.1.0 release wrote, which must never be regenerated.
 
 ### Compilation overlays and stable intern entries
 
@@ -407,6 +413,13 @@ iter.drop_with(self); // single path, no branching
 - The same value has `drop_with` called in multiple places (e.g. a loop with `continue` or `?` in the middle). This implies `defer_drop!` or `DropGuard` will be easier to read.
 - The explicit call to `drop_with` produces more lines of code than `defer_drop!` or `DropGuard` would. The latter often avoid rightward drift and make the cleanup logic easier.
 - The value is part of a container (e.g. `Vec<Value>`). Ideally the container itself implements `DropWithContext` and so `defer_drop` or `DropGuard` can be used on the whole container. Consider if a `DropWithContext` implementation for the container might be missing.
+
+### `#[strum(use_phf)]` only on large `EnumString` enums
+
+Add `use_phf` only to `EnumString` enums with more than ~100 variants, or ones that will clearly grow past that.
+Its SipHash costs ~11 ns per lookup however small the enum, while strum's default `match` costs 3–6 ns on enums of
+40–80 variants, and less still on misses whose length no variant shares.
+At ~970 variants (`StaticStrings`), `match` costs ~100 ns and PHF wins about 7×.
 
 ### Resource-tracked string construction (`StringBuilder`)
 
