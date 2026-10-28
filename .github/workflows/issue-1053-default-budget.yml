@@ -1,14 +1,14 @@
-name: Issue 1053 default budget
+name: Issue 1053 Python default budget
 
 on:
   push:
-    branches: [ci/default-budget-1053]
+    branches: [ci/python-default-budget-1053]
 
 permissions:
   contents: read
 
 jobs:
-  default-budget:
+  python-default-budget:
     if: github.repository == 'RanaPriyansh/monty'
     runs-on: ubuntu-latest
     timeout-minutes: 46
@@ -29,7 +29,17 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Compare the default-budget boundary
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        timeout-minutes: 5
+        with:
+          python-version: '3.14'
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        timeout-minutes: 5
+        with:
+          enable-cache: false
+
+      - name: Compare Python default-budget behavior
         run: exec python3 .github/issue-1053/run.py
 
       - name: Upload validation evidence
@@ -37,7 +47,7 @@ jobs:
         timeout-minutes: 1
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: issue-1053-default-budget
+          name: issue-1053-python-default-budget
           path: ${{ runner.temp }}/issue-1053-evidence/
           if-no-files-found: warn
           retention-days: 7

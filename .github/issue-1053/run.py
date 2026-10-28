@@ -73,35 +73,60 @@ def metadata(output):
     return values
 
 
-def check_neighbor(output, count):
-    values = fields(output)
-    before = values.get("worker_before", "")
-    if (not before.isdecimal() or values.get("neighbor_length") != str(count)
-            or values.get("neighbor_values") != "checked"
-            or values.get("worker_after_list") != f"Some({before})"
-            or values.get("worker_after_sentinel") != f"Some({before})"):
-        raise ValueError("neighbor output did not prove list values and worker retention")
+def python_records(output, expected_identity=None):
+    records = [json.loads(line) for line in output.splitlines() if line.strip()]
+    if not records or records[0].get("event") != "identity":
+        raise ValueError("Python output lacks its native identity")
+    identity = records[0]
+    if (identity.get("assertions_enabled") is not True
+            or identity.get("worker_identity_interface") != "MontySession.worker_pid"
+            or identity.get("native_sha256") != identity.get("compiled_sha256")):
+        raise ValueError("Python output has invalid native identity or assertion state")
+    if expected_identity is not None and identity != expected_identity:
+        raise ValueError("Python native identity changed between probes")
+    return records
 
 
-def check_rejection(output, baseline):
-    values = fields(output)
-    before = values.get("worker_before", "")
-    diagnostic = values.get("first_failure", "")
-    if not before.isdecimal() or "decode" not in diagnostic or "budget" not in diagnostic:
-        raise ValueError("rejection output lacks worker identity or decode-budget evidence")
-    if baseline:
-        if (values.get("first_failure_variant") != "Protocol"
-                or values.get("worker_after_error") != "None"
-                or values.get("worker_after_sentinel") != "None"
-                or not values.get("after_error", "").startswith("Finished:")
-                or values.get("cleanup_failure")
-                != "checkout cleanup failed: this checkout has already been finished"):
-            raise ValueError("baseline did not prove Protocol rejection and discarded checkout")
-    elif (values.get("first_failure_variant") != "Runtime"
-            or values.get("worker_after_error") != f"Some({before})"
-            or values.get("worker_after_sentinel") != f"Some({before})"
-            or values.get("after_error") != "Complete17"):
-        raise ValueError("candidate did not prove Runtime rejection and same-worker recovery")
+def check_python_result(result, mode, count):
+    if result.get("event") != "result" or result.get("mode") != mode:
+        raise ValueError("Python result mode differs")
+    worker_before = result.get("worker_before")
+    if type(worker_before) is not int or worker_before <= 0 or result.get("worker_pid_checked") is not True:
+        raise ValueError("Python result lacks a checked positive worker PID")
+    if mode == "baseline":
+        expected = (
+            "monty worker protocol error: invalid payload from worker: failed to decode Protobuf message: "
+            "MontyNode.kind: Complete.values: ChildEvent.kind: frame exceeds decode memory budget"
+        )
+        if (result.get("count") != count or result.get("first_error_type") != "RuntimeError"
+                or result.get("first_error") != expected
+                or result.get("after_error_type") != "RuntimeError"
+                or result.get("after_error") != "this checkout has already been finished"
+                or "worker_after_error" not in result or result["worker_after_error"] is not None
+                or "worker_after_sentinel" not in result or result["worker_after_sentinel"] is not None):
+            raise ValueError("Python baseline did not prove built-in rejection and a finished session")
+        return
+    if result.get("after_error") != "Complete17":
+        raise ValueError("Python public session did not preserve sentinel 17")
+    if (type(result.get("worker_after_sentinel")) is not int
+            or result["worker_after_sentinel"] != worker_before):
+        raise ValueError("Python public session did not retain the original worker PID")
+    if mode == "candidate":
+        if (result.get("count") != count or result.get("first_error_type") != "MontyRuntimeError"
+                or result.get("first_error") != "RuntimeError: response exceeds host decode budget"
+                or type(result.get("worker_after_error")) is not int
+                or result["worker_after_error"] != worker_before):
+            raise ValueError("Python candidate did not prove the expected MontyRuntimeError")
+    elif mode == "neighbor":
+        if result.get("count") != count or result.get("values") != "checked":
+            raise ValueError("Python neighbor did not prove the expected list")
+    elif mode == "latency":
+        samples = result.get("samples_ns", {})
+        if (set(samples) != {"16", "1024", "65536"} or result.get("warmups_per_size") != 3
+                or result.get("timed_calls_per_size") != 10 or result.get("checks_outside_timing") is not True
+                or any(len(values) != 10 or any(type(value) is not int or value < 0 for value in values)
+                       for values in samples.values())):
+            raise ValueError("Python latency output lacks the complete raw sample set")
 
 
 def proc_stat(text):
@@ -264,9 +289,11 @@ class Validation:
         self.report["commands"].append(record)
         self.save()
         overrides = {"CARGO_BUILD_JOBS": "1", "RAYON_NUM_THREADS": "1", "RUST_TEST_THREADS": "1",
-                     "CARGO_INCREMENTAL": "0"}
+                     "CARGO_INCREMENTAL": "0", "PYTHONOPTIMIZE": "0",
+                     "UV_PYTHON": sys.executable, "UV_PYTHON_DOWNLOADS": "never"}
         if target is not None:
             overrides["CARGO_TARGET_DIR"] = str(target)
+            overrides["PYO3_PYTHON"] = str(Path(directory) / ".venv/bin/python")
         record["environment_overrides"] = overrides
         log = self.evidence / f"{len(self.report['commands']):02d}-{label}.log"
         record["log"] = log.name
@@ -335,7 +362,11 @@ class Validation:
         self.report["workflow_source"] = self.command(
             "workflow-source", ["git", "rev-parse", "HEAD", "HEAD^{tree}"], self.root, 30
         ).splitlines()
-        work = Path(tempfile.mkdtemp(prefix="issue-1053-", dir=self.temporary))
+        python_fixture = self.root / ".github/issue-1053/python_witness.py"
+        self.report["python_fixture_sha256"] = sha256(python_fixture)
+        self.report["python"] = self.command("python-version", [sys.executable, "-VV"], self.root, 30)
+        self.report["uv"] = self.command("uv-version", ["uv", "--version"], self.root, 30)
+        work = Path(tempfile.mkdtemp(prefix="issue-1053-python-", dir=self.temporary))
         self.report["work_directory"] = str(work)
         builds = {}
         for name, revision in (("baseline", BASELINE), ("candidate", CANDIDATE)):
@@ -348,24 +379,64 @@ class Validation:
             commit, tree = source.splitlines()
             if commit != revision:
                 raise RuntimeError(f"{name} source revision does not match")
-            self.report["checkouts"][name] = {"commit": commit, "tree": tree, "target": str(target)}
+            details = {"commit": commit, "tree": tree, "target": str(target)}
+            self.report["checkouts"][name] = details
+            graph = checkout / "crates/monty-types/src/graph.rs"
+            enum_source = graph.read_text().split("pub enum MontyNode {", 1)[1].split("\nimpl MontyNode", 1)[0]
+            if "#[cfg" in enum_source:
+                raise RuntimeError("MontyNode has conditional layout variants")
+            details["layout_evidence"] = {
+                "graph_source_sha256": sha256(graph), "conditional_node_variants": False,
+                "witness_type_feature": "monty-types/tzdb",
+                "limit": "Node layout is feature-independent; both processes must also match pointer width.",
+            }
             example = checkout / "crates/monty-pool/examples/issue1053_witness.rs"
             if example.exists():
                 raise RuntimeError("the witness would overwrite a source file")
             example.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(fixture, example)
-            for label, selection in (("runtime", ["-p", "monty-runtime", "--bin", "monty"]),
-                                     ("witness", ["-p", "monty-pool", "--example", "issue1053_witness"])):
-                self.command(f"{name}-build-{label}",
-                             ["cargo", "build", "--release", "--locked", "--jobs", "1", *selection],
-                             checkout, 900, target=target)
+            self.command(f"{name}-python-dependencies",
+                         ["uv", "sync", "--locked", "--all-packages", "--only-dev", "--inexact",
+                          "--python", sys.executable], checkout, 300)
+            self.command(f"{name}-build-runtime",
+                         ["cargo", "build", "--release", "--locked", "--jobs", "1",
+                          "-p", "monty-runtime", "--bin", "monty"], checkout, 900, target=target)
+            self.command(f"{name}-build-bindings",
+                         ["uv", "run", "--no-sync", "maturin", "develop", "--uv", "--locked",
+                          "--release", "--jobs", "1", "-m", "crates/monty-python/Cargo.toml"],
+                         checkout, 600, target=target)
+            self.command(f"{name}-build-metadata-witness",
+                         ["cargo", "build", "--release", "--locked", "--jobs", "1", "-p", "monty-pool",
+                          "--example", "issue1053_witness", "--features", "monty-types/tzdb"],
+                         checkout, 300, target=target)
             worker = target / "release/monty"
             witness = target / "release/examples/issue1053_witness"
-            self.report["checkouts"][name].update({"worker_sha256": sha256(worker),
-                                                   "witness_sha256": sha256(witness)})
+            compiled = target / "release/lib_monty.so"
+            details.update({"worker_sha256": sha256(worker), "witness_sha256": sha256(witness),
+                            "compiled_native_sha256": sha256(compiled),
+                            "cargo_lock_sha256": sha256(checkout / "Cargo.lock"),
+                            "uv_lock_sha256": sha256(checkout / "uv.lock"),
+                            "worker_provenance": "Built once from this exact source commit with the recorded toolchain."})
             output = self.command(f"{name}-metadata", [witness, "metadata"], checkout, 30)
-            self.report["checkouts"][name]["metadata"] = metadata(output)
-            builds[name] = (checkout, worker, witness)
+            details["metadata"] = metadata(output)
+            python = checkout / ".venv/bin/python"
+            arguments = [python, python_fixture, "identity", "--source-root", checkout,
+                         "--worker", worker, "--worker-sha256", details["worker_sha256"],
+                         "--compiled-library", compiled, "--compiled-sha256", details["compiled_native_sha256"]]
+            output = self.command(f"{name}-python-identity", arguments, checkout, 30)
+            records = python_records(output)
+            if len(records) != 1:
+                raise RuntimeError("Python identity probe returned extra records")
+            identity = records[0]
+            if (identity.get("pointer_bytes") != details["metadata"]["usize_bytes"]
+                    or identity.get("source_root") != str(checkout)
+                    or identity.get("python_prefix") != str(checkout / ".venv")
+                    or identity.get("package_source") != str(checkout / "crates/monty-python/python/pydantic_monty/__init__.py")
+                    or identity.get("worker_sha256") != details["worker_sha256"]
+                    or identity.get("compiled_sha256") != details["compiled_native_sha256"]):
+                raise RuntimeError("Python native identities or pointer width differ from the compiled sources")
+            details["python_identity"] = identity
+            builds[name] = (checkout, arguments)
             self.save()
         baseline_metadata = self.report["checkouts"]["baseline"]["metadata"]
         if baseline_metadata != self.report["checkouts"]["candidate"]["metadata"]:
@@ -373,19 +444,44 @@ class Validation:
         self.report["macos_reference_comparison"] = {
             "reference_metadata": MACOS_REFERENCE_METADATA,
             "metadata_matches": baseline_metadata == MACOS_REFERENCE_METADATA,
-            "limit": "Matching metadata permits numeric comparison only. It does not verify macOS recovery.",
+            "limit": "Matching metadata permits numeric comparison only. It does not verify macOS Python behavior.",
         }
         count = baseline_metadata["first_over_budget_m"]
-        for name, (checkout, worker, witness) in builds.items():
-            output = self.command(f"{name}-healthy-16", [witness, "neighbor", worker, "16"], checkout, 120)
-            check_neighbor(output, 16)
-        for name, (checkout, worker, witness) in builds.items():
-            output = self.command(f"{name}-reject-m", [witness, "reject", worker, str(count)], checkout, 360,
-                                  expected=1 if name == "baseline" else 0, large=True)
-            check_rejection(output, name == "baseline")
-        self.report["default_budget_pair"] = "passed"
+
+        def probe(name, mode, size, timeout, large=False):
+            checkout, arguments = builds[name]
+            command = list(arguments)
+            command[2] = mode
+            command.extend(["--count", str(size)])
+            output = self.command(f"{name}-{mode}-{len(self.report['commands'])}", command, checkout,
+                                  timeout, large=large)
+            records = python_records(output, self.report["checkouts"][name]["python_identity"])
+            if len(records) != 2:
+                raise RuntimeError("Python probe returned an unexpected record count")
+            check_python_result(records[1], mode, size)
+            return records[1]
+
+        for name in builds:
+            probe(name, "neighbor", 16, 120)
+        for name in builds:
+            self.report["checkouts"][name]["python_rejection"] = probe(name, name, count, 360, large=True)
+        self.report["python_default_budget_pair"] = "passed"
         self.save()
-        for name, (checkout, worker, witness) in builds.items():
+        self.guard()
+        if self.work_deadline - time.monotonic() >= 545:
+            order = ("baseline", "candidate", "candidate", "baseline")
+            self.report["python_latency"] = {
+                "order": order, "blocks": [], "timing": "perf_counter_ns around feed_run only",
+                "timed_calls_per_size_per_version": 20, "warmups_per_size_per_version": 6,
+                "limit": "Raw observations only. No speed threshold, discarded samples or overhead guarantee.",
+            }
+            for name in order:
+                result = probe(name, "latency", 16, 120)
+                self.report["python_latency"]["blocks"].append({"source": name, "result": result})
+                self.save()
+        else:
+            self.report["python_latency"] = {"omitted": "Insufficient time for all four ABBA blocks."}
+        for name in builds:
             if self.work_deadline - time.monotonic() < 425:
                 self.report["neighbors"][name] = "omitted: insufficient time for the optional M-1 probe"
                 continue
@@ -393,12 +489,10 @@ class Validation:
             if available_memory() < LARGE_MEMORY_FLOOR:
                 self.report["neighbors"][name] = "omitted before launch: MemAvailable is below 12 GiB"
                 continue
-            output = self.command(f"{name}-neighbor-m-minus-1",
-                                  [witness, "neighbor", worker, str(count - 1)], checkout, 360, large=True)
-            check_neighbor(output, count - 1)
+            probe(name, "neighbor", count - 1, 360, large=True)
             self.report["neighbors"][name] = "passed"
             self.save()
-        for name, (checkout, _worker, _witness) in builds.items():
+        for name, (checkout, _arguments) in builds.items():
             output = self.command(f"{name}-tracked-status",
                                   ["git", "status", "--porcelain", "--untracked-files=no"], checkout, 30)
             if output.strip():
