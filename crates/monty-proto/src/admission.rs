@@ -20,12 +20,12 @@ pub fn receiver_allocation_profile(max_decode_bytes: usize) -> pb::ReceiverAlloc
     pb::ReceiverAllocationProfile {
         model_version: ALLOCATION_MODEL_VERSION,
         max_decode_bytes: max_decode_bytes.min(DEFAULT_MAX_DECODE_BYTES) as u64,
-        node_slot_bytes: size_of::<MontyNode>() as u64,
-        reference_slot_bytes: REFERENCE_COST as u64,
-        class_box_bytes: size_of::<ClassTypeNode>() as u64,
-        string_slot_bytes: size_of::<String>() as u64,
-        print_segment_slot_bytes: size_of::<pb::PrintSegment>() as u64,
-        traceback_slot_bytes: size_of::<pb::StackFrame>() as u64,
+        node_slot_bytes: u32::try_from(size_of::<MontyNode>()).expect("node slot fits uint32"),
+        reference_slot_bytes: u32::try_from(REFERENCE_COST).expect("reference slot fits uint32"),
+        class_box_bytes: u32::try_from(size_of::<ClassTypeNode>()).expect("class box fits uint32"),
+        string_slot_bytes: u32::try_from(size_of::<String>()).expect("string slot fits uint32"),
+        print_segment_slot_bytes: u32::try_from(size_of::<pb::PrintSegment>()).expect("print segment slot fits uint32"),
+        traceback_slot_bytes: u32::try_from(size_of::<pb::StackFrame>()).expect("traceback slot fits uint32"),
     }
 }
 
@@ -73,7 +73,7 @@ pub fn canonical_event_decode_bytes(event: &pb::ChildEvent, profile: &pb::Receiv
     if let Some(kind) = kind {
         match kind {
             pb::child_event::Kind::Print(print) => {
-                cost.repeated(print.segments.len(), profile.print_segment_slot_bytes)?;
+                cost.repeated(print.segments.len(), u64::from(profile.print_segment_slot_bytes))?;
                 for segment in &print.segments {
                     cost.bytes(segment.text.len())?;
                 }
@@ -161,13 +161,16 @@ impl Cost<'_> {
 
     /// Reference pairs pay two receiver reference allowances at each growth boundary.
     fn pairs(&mut self, len: usize) -> Option<()> {
-        self.repeated(len, self.profile.reference_slot_bytes.checked_mul(2)?)
+        self.repeated(len, u64::from(self.profile.reference_slot_bytes).checked_mul(2)?)
     }
 
     /// Packed IDs reserve one slot per encoded varint byte, including over-reservation.
     fn ids(&mut self, ids: &[NodeId]) -> Option<()> {
         for id in ids {
-            self.add((encoded_len_varint(u64::from(id.0)) as u64).checked_mul(self.profile.reference_slot_bytes)?)?;
+            self.add(
+                (encoded_len_varint(u64::from(id.0)) as u64)
+                    .checked_mul(u64::from(self.profile.reference_slot_bytes))?,
+            )?;
         }
         Some(())
     }
@@ -177,7 +180,7 @@ impl Cost<'_> {
         self.add(
             u64::try_from(arena.0.len())
                 .ok()?
-                .checked_mul(self.profile.node_slot_bytes)?,
+                .checked_mul(u64::from(self.profile.node_slot_bytes))?,
         )?;
         for node in &arena.0 {
             match node {
@@ -204,7 +207,7 @@ impl Cost<'_> {
                 | MontyNode::Cycle(text) => self.bytes(text.len())?,
                 MontyNode::Bytes(bytes) => self.bytes(bytes.len())?,
                 MontyNode::List(ids) | MontyNode::Tuple(ids) | MontyNode::Set(ids) | MontyNode::FrozenSet(ids) => {
-                    self.ids(ids)?
+                    self.ids(ids)?;
                 }
                 MontyNode::NamedTuple {
                     type_name,
@@ -212,7 +215,7 @@ impl Cost<'_> {
                     values,
                 } => {
                     self.bytes(type_name.len())?;
-                    self.repeated(field_names.len(), self.profile.string_slot_bytes)?;
+                    self.repeated(field_names.len(), u64::from(self.profile.string_slot_bytes))?;
                     for name in field_names {
                         self.bytes(name.len())?;
                     }
@@ -220,7 +223,7 @@ impl Cost<'_> {
                 }
                 MontyNode::Dict(pairs) => self.pairs(pairs.len())?,
                 MontyNode::ClassType(class) => {
-                    self.add(self.profile.class_box_bytes)?;
+                    self.add(u64::from(self.profile.class_box_bytes))?;
                     self.bytes(class.name.len())?;
                     self.bytes(16)?;
                     self.pairs(class.attrs.len())?;
@@ -265,7 +268,7 @@ impl Cost<'_> {
     fn exception(&mut self, exception: &pb::RaisedException) -> Option<()> {
         self.bytes(exception.exc_type.len())?;
         self.optional_text(exception.message.as_deref())?;
-        self.repeated(exception.traceback.len(), self.profile.traceback_slot_bytes)?;
+        self.repeated(exception.traceback.len(), u64::from(self.profile.traceback_slot_bytes))?;
         for frame in &exception.traceback {
             self.bytes(frame.filename.len())?;
             self.optional_text(frame.frame_name.as_deref())?;
@@ -339,14 +342,14 @@ impl Cost<'_> {
                 pb::os_call::Call::Time(time) => self.bytes(time.caller.len())?,
                 pb::os_call::Call::Import(import) => self.bytes(import.module.len())?,
                 pb::os_call::Call::ImportStubs(stubs) => {
-                    self.repeated(stubs.modules.len(), self.profile.string_slot_bytes)?;
+                    self.repeated(stubs.modules.len(), u64::from(self.profile.string_slot_bytes))?;
                     for module in &stubs.modules {
                         self.bytes(module.len())?;
                     }
                 }
                 pb::os_call::Call::Scan(scan) => {
                     self.bytes(scan.path.len())?;
-                    self.repeated(scan.pattern.len(), self.profile.string_slot_bytes)?;
+                    self.repeated(scan.pattern.len(), u64::from(self.profile.string_slot_bytes))?;
                     for pattern in &scan.pattern {
                         self.bytes(pattern.len())?;
                     }
@@ -381,5 +384,30 @@ impl Write for ByteCounter {
             .checked_add(u64::try_from(text.len()).map_err(|_| fmt::Error)?)
             .ok_or(fmt::Error)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cost, receiver_allocation_profile};
+
+    #[test]
+    fn cumulative_cost_overflow_is_rejected() {
+        let profile = receiver_allocation_profile(1024);
+        let mut cost = Cost {
+            total: u64::MAX,
+            profile: &profile,
+        };
+        assert_eq!(cost.add(1), None);
+    }
+
+    #[test]
+    fn repeated_cost_overflow_is_rejected_at_the_coefficient_limit() {
+        let profile = receiver_allocation_profile(1024);
+        let mut cost = Cost {
+            total: 0,
+            profile: &profile,
+        };
+        assert_eq!(cost.repeated(usize::MAX, u64::from(u32::MAX)), None);
     }
 }

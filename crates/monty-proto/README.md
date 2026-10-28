@@ -112,6 +112,8 @@ and keeps the session.
 ## Receiver allocation admission
 
 A direct receiver can offer `Configure.receiver_allocation_profile` with its effective budget and decoder layout coefficients.
+The six layout coefficients use unsigned 32-bit values, which cover the fixed type sizes on supported targets.
+The budget and checked cost arithmetic use unsigned 64-bit values.
 The pool builds this offer from the actual receiver implementation.
 The child activates model 1 only for version 7 requests with nonzero coefficients and a budget of at least 47 bytes.
 Only the successful Configure reply carries `accepted_receiver_allocation_profile_version = 1`.

@@ -838,6 +838,7 @@ pub struct Configure {
     pub receiver_allocation_profile: ::core::option::Option<ReceiverAllocationProfile>,
 }
 /// Model 1 uses cumulative logical vector growth and exact canonical reservations.
+/// Layout coefficients fit uint32 on supported targets. Cost arithmetic uses uint64.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, crate::budgeted_prost::Message)]
 #[prost(prost_path = "crate::budgeted_prost")]
 pub struct ReceiverAllocationProfile {
@@ -845,18 +846,18 @@ pub struct ReceiverAllocationProfile {
     pub model_version: u32,
     #[prost(uint64, tag = "2")]
     pub max_decode_bytes: u64,
-    #[prost(uint64, tag = "3")]
-    pub node_slot_bytes: u64,
-    #[prost(uint64, tag = "4")]
-    pub reference_slot_bytes: u64,
-    #[prost(uint64, tag = "5")]
-    pub class_box_bytes: u64,
-    #[prost(uint64, tag = "6")]
-    pub string_slot_bytes: u64,
-    #[prost(uint64, tag = "7")]
-    pub print_segment_slot_bytes: u64,
-    #[prost(uint64, tag = "8")]
-    pub traceback_slot_bytes: u64,
+    #[prost(uint32, tag = "3")]
+    pub node_slot_bytes: u32,
+    #[prost(uint32, tag = "4")]
+    pub reference_slot_bytes: u32,
+    #[prost(uint32, tag = "5")]
+    pub class_box_bytes: u32,
+    #[prost(uint32, tag = "6")]
+    pub string_slot_bytes: u32,
+    #[prost(uint32, tag = "7")]
+    pub print_segment_slot_bytes: u32,
+    #[prost(uint32, tag = "8")]
+    pub traceback_slot_bytes: u32,
 }
 /// Executes one snippet against the session. Turn ends with `Complete`,
 /// `Error`, `TypingError`, or a suspension event.

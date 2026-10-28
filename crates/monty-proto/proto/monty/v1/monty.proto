@@ -635,15 +635,16 @@ message Configure {
 }
 
 // Model 1 uses cumulative logical vector growth and exact canonical reservations.
+// Layout coefficients fit uint32 on supported targets. Cost arithmetic uses uint64.
 message ReceiverAllocationProfile {
   uint32 model_version = 1;
   uint64 max_decode_bytes = 2;
-  uint64 node_slot_bytes = 3;
-  uint64 reference_slot_bytes = 4;
-  uint64 class_box_bytes = 5;
-  uint64 string_slot_bytes = 6;
-  uint64 print_segment_slot_bytes = 7;
-  uint64 traceback_slot_bytes = 8;
+  uint32 node_slot_bytes = 3;
+  uint32 reference_slot_bytes = 4;
+  uint32 class_box_bytes = 5;
+  uint32 string_slot_bytes = 6;
+  uint32 print_segment_slot_bytes = 7;
+  uint32 traceback_slot_bytes = 8;
 }
 
 // How a serving relay treats the session's state; children ignore it.

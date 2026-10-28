@@ -1362,8 +1362,12 @@ fn canonical_estimates_use_supplied_receiver_coefficients() {
     profile.node_slot_bytes = 91;
     profile.reference_slot_bytes = 27;
     assert_eq!(canonical_event_decode_bytes(&event, &profile), Some(2 * 91 + 16 * 27));
-    profile.node_slot_bytes = u64::MAX;
-    assert_eq!(canonical_event_decode_bytes(&event, &profile), None);
+    profile.node_slot_bytes = u32::MAX;
+    profile.reference_slot_bytes = u32::MAX;
+    assert_eq!(
+        canonical_event_decode_bytes(&event, &profile),
+        Some(18 * u64::from(u32::MAX))
+    );
 }
 
 /// Every child event and OS-call arm includes its final metadata and nested payloads.
@@ -1600,6 +1604,42 @@ fn allocation_profile_wire_fields_match_the_generated_oracle() {
     };
     assert_eq!(event.encode_to_vec(), oracle.encode_to_vec());
     assert_canonical_charge(&event);
+}
+
+#[test]
+fn allocation_profile_coefficient_limits_keep_varint_bytes_without_decode_allocations() {
+    for coefficient in [0, 1, u32::MAX] {
+        let profile = pb::ReceiverAllocationProfile {
+            node_slot_bytes: coefficient,
+            reference_slot_bytes: coefficient,
+            class_box_bytes: coefficient,
+            string_slot_bytes: coefficient,
+            print_segment_slot_bytes: coefficient,
+            traceback_slot_bytes: coefficient,
+            ..receiver_allocation_profile(4096)
+        };
+        let mut expected = Vec::new();
+        for (tag, value) in [
+            (1, u64::from(profile.model_version)),
+            (2, profile.max_decode_bytes),
+            (3, u64::from(coefficient)),
+            (4, u64::from(coefficient)),
+            (5, u64::from(coefficient)),
+            (6, u64::from(coefficient)),
+            (7, u64::from(coefficient)),
+            (8, u64::from(coefficient)),
+        ] {
+            if value != 0 {
+                encode_key(tag, WireType::Varint, &mut expected);
+                encode_varint(value, &mut expected);
+            }
+        }
+        assert_eq!(profile.encode_to_vec(), expected);
+        assert_eq!(
+            decode_frame_with_budget::<pb::ReceiverAllocationProfile>(&expected, 0).unwrap(),
+            profile
+        );
+    }
 }
 
 /// An odd combined varint length changes wire size without changing pair-slot charges.
