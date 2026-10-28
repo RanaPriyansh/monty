@@ -263,7 +263,7 @@ class Validation:
                   "timeout_seconds": timeout, "expected_exit": expected, "status": "starting"}
         self.report["commands"].append(record)
         self.save()
-        overrides = {"CARGO_BUILD_JOBS": "2", "RAYON_NUM_THREADS": "1", "RUST_TEST_THREADS": "1",
+        overrides = {"CARGO_BUILD_JOBS": "1", "RAYON_NUM_THREADS": "1", "RUST_TEST_THREADS": "1",
                      "CARGO_INCREMENTAL": "0"}
         if target is not None:
             overrides["CARGO_TARGET_DIR"] = str(target)
@@ -357,7 +357,7 @@ class Validation:
             for label, selection in (("runtime", ["-p", "monty-runtime", "--bin", "monty"]),
                                      ("witness", ["-p", "monty-pool", "--example", "issue1053_witness"])):
                 self.command(f"{name}-build-{label}",
-                             ["cargo", "build", "--release", "--locked", "--jobs", "2", *selection],
+                             ["cargo", "build", "--release", "--locked", "--jobs", "1", *selection],
                              checkout, 900, target=target)
             worker = target / "release/monty"
             witness = target / "release/examples/issue1053_witness"
