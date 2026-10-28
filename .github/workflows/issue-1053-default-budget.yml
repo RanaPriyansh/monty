@@ -1,0 +1,43 @@
+name: Issue 1053 default budget
+
+on:
+  push:
+    branches: [ci/default-budget-1053]
+
+permissions:
+  contents: read
+
+jobs:
+  default-budget:
+    if: github.repository == 'RanaPriyansh/monty'
+    runs-on: ubuntu-latest
+    timeout-minutes: 46
+    steps:
+      - name: Start the absolute time budget
+        run: |
+          echo "ISSUE1053_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/issue-1053-evidence"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        timeout-minutes: 5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        timeout-minutes: 10
+        with:
+          toolchain: stable
+
+      - name: Compare the default-budget boundary
+        run: exec python3 .github/issue-1053/run.py
+
+      - name: Upload validation evidence
+        if: always()
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: issue-1053-default-budget
+          path: ${{ runner.temp }}/issue-1053-evidence/
+          if-no-files-found: warn
+          retention-days: 7
