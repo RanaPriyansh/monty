@@ -21,7 +21,7 @@ use num_bigint::{BigInt, Sign};
 use prost::{
     DecodeError, Message,
     bytes::{Buf, BufMut},
-    encoding::{DecodeContext, WireType, encode_key, encode_varint},
+    encoding::{DecodeContext, WireType, encode_key, encode_varint, encoded_len_varint},
 };
 
 include!("oracle/repeated_fields.rs");
@@ -923,7 +923,7 @@ fn a_full_non_power_of_two_reservation_has_one_logical_growth_charge() {
         assert_eq!(decode_budget_remaining(), Some(0));
     });
     assert_eq!(values.as_slice(), &[1, 2, 3, 4]);
-    with_decode_budget(8 * size_of::<u64>(), || {
+    with_decode_budget(size_of::<[u64; 8]>(), || {
         values.try_push(5).unwrap();
         assert_eq!(decode_budget_remaining(), Some(0));
     });
@@ -932,7 +932,7 @@ fn a_full_non_power_of_two_reservation_has_one_logical_growth_charge() {
 /// Packed varint byte reservations cover each u32 encoding boundary exactly.
 #[test]
 fn packed_reference_byte_boundaries_have_exact_charges() {
-    let ids = [0, 127, 128, 16383, 16384, 2097151, 2097152];
+    let ids = [0, 127, 128, 16_383, 16_384, 2_097_151, 2_097_152];
     let wire = WireIndexes(ids.into_iter().map(NodeId).collect()).encode_to_vec();
     let (decoded, charged) = measured_decode::<WireIndexes>(&wire);
     assert_eq!(decoded.0.len(), ids.len());
@@ -942,8 +942,8 @@ fn packed_reference_byte_boundaries_have_exact_charges() {
 /// Pair slots follow incremental growth, independent of odd varint-byte totals.
 #[test]
 fn pair_reference_varint_boundaries_do_not_round_as_packed_storage() {
-    for (key, value, bytes) in [(127, 128, 3), (16383, 16384, 5), (2097151, 2097152, 7)] {
-        let actual_bytes = prost::encoding::encoded_len_varint(key) + prost::encoding::encoded_len_varint(value);
+    for (key, value, bytes) in [(127, 128, 3), (16_383, 16_384, 5), (2_097_151, 2_097_152, 7)] {
+        let actual_bytes = encoded_len_varint(key) + encoded_len_varint(value);
         assert_eq!(actual_bytes, bytes);
         let pair = (
             NodeId(u32::try_from(key).unwrap()),

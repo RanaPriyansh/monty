@@ -3354,6 +3354,7 @@ async fn an_admitted_raw_error_keeps_the_subprocess_checkout() {
             cwd: "/".to_owned(),
             ..Default::default()
         })),
+        trace_parent: None,
     };
     let mut on_event = |_: &pb::ChildEvent| Box::pin(ready(())) as PrintFuture;
     let event = session.turn_raw(&request("kept = 41"), &mut on_event).await.unwrap();
