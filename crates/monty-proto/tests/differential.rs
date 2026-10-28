@@ -1658,7 +1658,7 @@ fn canonical_dictionary_pairs_cross_varint_widths_without_packed_rounding() {
     let profile = receiver_allocation_profile(DEFAULT_MAX_DECODE_BYTES);
     assert_eq!(
         canonical_event_decode_bytes(&event, &profile),
-        Some(130 * profile.node_slot_bytes + 3 + 8 * profile.reference_slot_bytes)
+        Some(130 * u64::from(profile.node_slot_bytes) + 3 + 8 * u64::from(profile.reference_slot_bytes))
     );
     assert_canonical_charge(&event);
 }

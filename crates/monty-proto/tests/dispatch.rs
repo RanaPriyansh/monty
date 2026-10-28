@@ -1048,7 +1048,7 @@ fn admitted_turn(child: &mut Child, kind: pb::parent_request::Kind, budget: usiz
         events.push(monty_proto::decode_frame_with_budget::<pb::ChildEvent>(&rest[4..4 + len], budget).unwrap());
         rest = &rest[4 + len..];
     }
-    assert!(!events.is_empty());
+    assert_ne!(events, []);
     assert!(
         events[..events.len() - 1]
             .iter()
@@ -1212,10 +1212,18 @@ fn allocation_rejection_recovers_fresh_suspensions_and_stub_requests() {
             profile.max_decode_bytes = 47;
         }
         configure_profile(&mut child, Some(profile), PROTOCOL_VERSION, type_check);
-        let events = admitted_turn(&mut child, admission_feed(code), profile.max_decode_bytes as usize);
+        let events = admitted_turn(
+            &mut child,
+            admission_feed(code),
+            usize::try_from(profile.max_decode_bytes).unwrap(),
+        );
         assert_budget_replacement(&events[0]);
         // A fresh Feed must be accepted as a state transition, even if its value is too large.
-        let events = admitted_turn(&mut child, admission_feed("1"), profile.max_decode_bytes as usize);
+        let events = admitted_turn(
+            &mut child,
+            admission_feed("1"),
+            usize::try_from(profile.max_decode_bytes).unwrap(),
+        );
         assert_budget_replacement(&events[0]);
     }
 }
@@ -1581,7 +1589,7 @@ fn print_transport_failure_is_not_classified_as_local_admission() {
         )
         .unwrap_err();
     assert!(matches!(error, FrameError::Io(error) if error.kind() == io::ErrorKind::BrokenPipe));
-    assert!(sink.sent.is_empty());
+    assert_eq!(sink.sent, []);
 }
 
 /// Uses line buffering so each completed line has its own admission decision.
