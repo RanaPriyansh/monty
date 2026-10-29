@@ -839,6 +839,18 @@ def test_physical_default_text_read_normalizes_special_content(test_dir: Path):
     assert (test_dir / 'special.txt').read_text(encoding='utf-8') == snapshot('line1\nline2\ttab\nwindows')
 
 
+def test_read_text_normalizes_unicode_newlines_with_utf8(monty_run: RunMonty, test_dir: Path):
+    raw = 'café\r\nsecond\rthird\u2028fourth\u2029'.encode('utf-8')
+    physical_path = test_dir / 'unicode-newlines.txt'
+    physical_path.write_bytes(raw)
+    expected = snapshot('café\nsecond\nthird\u2028fourth\u2029')
+    assert physical_path.read_text(encoding='utf-8') == expected
+
+    mount = MountDir(host_path=test_dir, virtual_path='/data', mode='read-only')
+    result = monty_run("from pathlib import Path; Path('/data/unicode-newlines.txt').read_text()", mount=mount)
+    assert result == expected
+
+
 @pytest.mark.parametrize('mode', ['read-only', 'read-write', 'overlay'], ids=['read-only', 'read-write', 'overlay'])
 def test_read_text_converts_newlines_for_mount_dir(
     monty_run: RunMonty, test_dir: Path, mode: Literal['read-only', 'read-write', 'overlay']

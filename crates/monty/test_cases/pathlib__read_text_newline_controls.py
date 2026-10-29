@@ -16,7 +16,3 @@ assert Path(root / 'lf-only.txt').read_text() == 'first\nsecond\n'
 
 (root / 'empty.txt').write_bytes(b'')
 assert Path(root / 'empty.txt').read_text() == ''
-
-unicode_text = 'café\u2028beta\u2029gamma'
-(root / 'unicode-separators.txt').write_bytes(unicode_text.encode('utf-8'))
-assert Path(root / 'unicode-separators.txt').read_text() == unicode_text
