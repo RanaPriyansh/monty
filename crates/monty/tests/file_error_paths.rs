@@ -934,7 +934,7 @@ fn file_sequence_host_error_then_retry() {
 fn file_sequence_wrong_response_type_returns_runtime_error() {
     for constructor in ["list", "tuple"] {
         for mode in ["r", "rb"] {
-            let mut repl = MontyRepl::new("test.py", ResourceTracker::default(), CompileOptions::default());
+            let repl = MontyRepl::new("test.py", ResourceTracker::default(), CompileOptions::default());
             #[cfg(feature = "ref-count-return")]
             let before = repl.heap_entry_count();
             let code = format!(
