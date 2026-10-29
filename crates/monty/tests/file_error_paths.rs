@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use monty::{Dump, MontyRepl, MontyRun, RunProgress, Session, SessionRef, dump};
+use monty::{Dump, MontyRepl, MontyRun, ReplProgress, RunProgress, Session, SessionRef, dump};
 use monty_types::{
     CompileOptions, ExcType, ExtFunctionResult, FileMode, MontyException, MontyFileHandle, MontyObject, PrintWriter,
     ResourceLimits, ResourceTracker,
@@ -1028,11 +1028,10 @@ fn assert_file_sequence_restored_abandonment(constructor: &str) {
     #[cfg(feature = "ref-count-return")]
     let before = repl.heap_entry_count();
     let code = format!("f = open('/x.txt')\n{constructor}(f)\n");
-    let open = repl
-        .feed_start(&code, vec![], PrintWriter::Stdout)
-        .unwrap()
-        .into_os_call()
-        .expect("expected Open OsCall");
+    let progress = repl.feed_start(&code, vec![], PrintWriter::Stdout).unwrap();
+    let ReplProgress::OsCall(open) = progress else {
+        panic!("expected Open OsCall, got {progress:?}");
+    };
     assert_eq!(open.function_call.name(), "open");
     let progress = open
         .resume(
@@ -1045,7 +1044,9 @@ fn assert_file_sequence_restored_abandonment(constructor: &str) {
         panic!("expected a suspended REPL session");
     };
     for progress in [progress, *restored] {
-        let read = progress.into_os_call().expect("expected suspended ReadText");
+        let ReplProgress::OsCall(read) = progress else {
+            panic!("expected suspended ReadText OsCall, got {progress:?}");
+        };
         assert_eq!(read.function_call.name(), "Path.read_text");
         let mut repl = read.into_repl();
         assert_eq!(
@@ -1086,20 +1087,20 @@ fn assert_file_sequence_outcomes(constructor: &str) {
             format!("{constructor}(f)")
         };
         let code = format!("f = open('/x.txt')\n{expression}\n");
-        let open = repl
-            .feed_start(&code, vec![], PrintWriter::Stdout)
-            .unwrap()
-            .into_os_call()
-            .expect("expected Open OsCall");
+        let progress = repl.feed_start(&code, vec![], PrintWriter::Stdout).unwrap();
+        let ReplProgress::OsCall(open) = progress else {
+            panic!("expected Open OsCall, got {progress:?}");
+        };
         assert_eq!(open.function_call.name(), "open");
-        let read = open
+        let progress = open
             .resume(
                 MontyObject::file_handle(file_handle("/x.txt", "r")),
                 PrintWriter::Stdout,
             )
-            .unwrap()
-            .into_os_call()
-            .expect("expected ReadText");
+            .unwrap();
+        let ReplProgress::OsCall(read) = progress else {
+            panic!("expected ReadText OsCall, got {progress:?}");
+        };
         assert_eq!(read.function_call.name(), "Path.read_text");
         let mut repl = if outcome == "abandon" {
             read.into_repl()
