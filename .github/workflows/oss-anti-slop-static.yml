@@ -1,0 +1,204 @@
+name: Anti-slop static check
+
+on:
+  push:
+    branches:
+      - validate/monty-anti-slop-20261030
+
+permissions:
+  contents: read
+
+jobs:
+  anti-slop:
+    name: Anti-slop on Monty JS package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout validation tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: RanaPriyansh/monty
+          ref: ${{ github.sha }}
+          path: tooling
+          persist-credentials: false
+
+      - name: Checkout pinned Monty source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: RanaPriyansh/monty
+          ref: edba24de6ff594a836679d9609faa41f7c2c0769
+          path: source
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Prepare diagnostics directory
+        run: mkdir -p tooling/artifacts
+
+      - name: Install isolated lint dependencies
+        working-directory: tooling
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Verify lint tool versions
+        working-directory: tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          oxlint_package_version=$(jq -r .version node_modules/oxlint/package.json)
+          plugins_package_version=$(jq -r .version node_modules/@oxlint/plugins/package.json)
+          oxlint_cli_version=$(./node_modules/.bin/oxlint --version)
+          printf 'oxlint package: %s\n@oxlint/plugins package: %s\noxlint CLI: %s\n' \
+            "$oxlint_package_version" "$plugins_package_version" "$oxlint_cli_version"
+          test "$oxlint_package_version" = '1.90.0'
+          test "$plugins_package_version" = '1.90.0'
+          grep -Eq '(^|[^0-9])1\.90\.0([^0-9]|$)' <<< "$oxlint_cli_version"
+
+      - name: Verify plugin control and lint pinned Monty source
+        working-directory: tooling
+        shell: bash
+        run: |
+          set -uo pipefail
+          artifacts=artifacts
+          oxlint=./node_modules/.bin/oxlint
+          config=./.oxlintrc.json
+          overall_failure=0
+          export NO_COLOR=1
+          : > "$artifacts/summary.txt"
+
+          printf '%s\n' 'export const antiSlopControl = typeof 1' > "$artifacts/anti-slop-control.ts"
+
+          run_capture() {
+            local name=$1
+            local format=$2
+            local target=$3
+            local status
+
+            if "$oxlint" --config "$config" --format "$format" "$target" \
+              > "$artifacts/$name.stdout" \
+              2> "$artifacts/$name.stderr"; then
+              status=0
+            else
+              status=$?
+            fi
+            printf '%s\n' "$status" > "$artifacts/$name.status"
+          }
+
+          json_is_valid() {
+            local path=$1
+            local expected_files=$2
+
+            jq -e --argjson expected_files "$expected_files" '
+              def nonnegative_integer: type == "number" and . >= 0 and floor == .;
+              def nonempty_string: type == "string" and length > 0;
+              type == "object"
+              and (.diagnostics | type == "array")
+              and (.number_of_files | nonnegative_integer and . > 0)
+              and (.number_of_rules == null or (.number_of_rules | nonnegative_integer))
+              and (.threads_count | nonnegative_integer and . > 0)
+              and (.start_time | type == "number" and . >= 0)
+              and (.diagnostics | all(.[];
+                type == "object"
+                and (.severity == "error" or .severity == "warning")
+                and (.filename | nonempty_string)
+                and (.message | nonempty_string)
+                and (.labels | type == "array")
+              ))
+              and (if $expected_files > 0 then .number_of_files == $expected_files else true end)
+            ' "$path" >/dev/null 2>&1
+          }
+
+          count_errors() {
+            jq '[.diagnostics[] | select(.severity == "error")] | length' "$1"
+          }
+
+          count_warnings() {
+            jq '[.diagnostics[] | select(.severity == "warning")] | length' "$1"
+          }
+
+          run_capture control-json json "$artifacts/anti-slop-control.ts"
+          run_capture control-unix unix "$artifacts/anti-slop-control.ts"
+          run_capture full-package json ../source/crates/monty-js
+          run_capture external-module json ../source/crates/monty-js/ts/externalModule.ts
+
+          control_json_status=$(cat "$artifacts/control-json.status")
+          control_unix_status=$(cat "$artifacts/control-unix.status")
+          control_json_valid=0
+          control_json_error=0
+          if json_is_valid "$artifacts/control-json.stdout" 1; then
+            control_json_valid=1
+            if jq -e 'any(.diagnostics[]; .severity == "error" and (.filename | endswith("anti-slop-control.ts")))' \
+              "$artifacts/control-json.stdout" >/dev/null; then
+              control_json_error=1
+            fi
+          fi
+          if [[ "$control_json_status" =~ ^[0-9]+$ ]] \
+            && (( control_json_status != 0 )) \
+            && [[ "$control_unix_status" =~ ^[0-9]+$ ]] \
+            && (( control_unix_status != 0 )) \
+            && (( control_json_valid == 1 )) \
+            && (( control_json_error == 1 )) \
+            && grep -Eq 'anti-slop-control\.ts:[0-9]+:[0-9]+:.*\[Error/anti-slop/no-runtime-typeof\]$' \
+              "$artifacts/control-unix.stdout"; then
+            printf 'PASS: generated control failed with anti-slop/no-runtime-typeof. JSON and Unix statuses: %s, %s.\n' \
+              "$control_json_status" "$control_unix_status" >> "$artifacts/summary.txt"
+          else
+            printf 'FAIL: generated control did not produce the expected anti-slop/no-runtime-typeof diagnostic. JSON valid=%s, matching JSON error=%s, statuses=%s,%s.\n' \
+              "$control_json_valid" "$control_json_error" "$control_json_status" "$control_unix_status" >> "$artifacts/summary.txt"
+            overall_failure=1
+          fi
+
+          check_source_scan() {
+            local name=$1
+            local expected_files=$2
+            local status
+            local json_path="$artifacts/$name.stdout"
+            local error_count
+            local warning_count
+
+            status=$(cat "$artifacts/$name.status")
+            if ! [[ "$status" =~ ^[0-9]+$ ]] || (( status != 0 )); then
+              printf 'FAIL: %s Oxlint status was %s.\n' "$name" "$status" >> "$artifacts/summary.txt"
+              overall_failure=1
+            fi
+
+            if ! json_is_valid "$json_path" "$expected_files"; then
+              printf 'FAIL: %s output did not match the pinned Oxlint JSON schema or file-count expectation.\n' \
+                "$name" >> "$artifacts/summary.txt"
+              overall_failure=1
+              return
+            fi
+
+            error_count=$(count_errors "$json_path")
+            warning_count=$(count_warnings "$json_path")
+            printf '%s: files=%s rules=%s errors=%s warnings=%s status=%s.\n' \
+              "$name" \
+              "$(jq -r '.number_of_files' "$json_path")" \
+              "$(jq -r '.number_of_rules' "$json_path")" \
+              "$error_count" "$warning_count" "$status" >> "$artifacts/summary.txt"
+            if (( error_count != 0 || warning_count != 0 )); then
+              jq -r '.diagnostics[:25][] | "\(.filename):\((.labels[0].span.line // 0)):\((.labels[0].span.column // 0)) \(.severity): \(.message)"' \
+                "$json_path" >> "$artifacts/summary.txt"
+            fi
+            if (( error_count != 0 )); then
+              printf 'FAIL: %s reported error diagnostics.\n' "$name" >> "$artifacts/summary.txt"
+              overall_failure=1
+            fi
+          }
+
+          check_source_scan full-package 0
+          check_source_scan external-module 1
+
+          cat "$artifacts/summary.txt"
+          exit "$overall_failure"
+
+      - name: Upload anti-slop diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: anti-slop-static-diagnostics
+          path: tooling/artifacts/
+          if-no-files-found: warn
+          retention-days: 14

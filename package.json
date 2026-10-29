@@ -1,0 +1,8 @@
+{
+  "name": "monty-anti-slop-validation",
+  "private": true,
+  "devDependencies": {
+    "@oxlint/plugins": "1.90.0",
+    "oxlint": "1.90.0"
+  }
+}
