@@ -717,6 +717,7 @@ pub enum StaticStrings {
     CacheInfoName,
     /// Cached callable's `cache_parameters()` method.
     CacheParameters,
+    Calcsize,
     /// `typing.Callable` marker.
     #[strum(serialize = "Callable")]
     Callable,
@@ -1841,6 +1842,7 @@ pub enum StaticStrings {
     /// `pad` parameter of `base64.b85encode()`.
     #[strum(serialize = "pad")]
     Pad,
+    Pack,
     /// `itertools.pairwise()` function.
     Pairwise,
     /// `os.pardir` constant name.
@@ -2300,6 +2302,7 @@ pub enum StaticStrings {
     Strip,
     /// `datetime.strptime()` classmethod.
     Strptime,
+    Struct,
     /// Named-tuple type name of a `time` module `struct_time`.
     #[strum(serialize = "time.struct_time")]
     StructTime,
@@ -2493,6 +2496,7 @@ pub enum StaticStrings {
     UnixDialect,
     /// `Path.unlink()` and `os.unlink()` — yields a host call.
     Unlink,
+    Unpack,
     /// `@dataclass(unsafe_hash=...)`.
     UnsafeHash,
     /// `update()` method, shared by `set` and `dict`.

@@ -37,6 +37,7 @@ pub(crate) mod os_path;
 pub(crate) mod pathlib;
 pub(crate) mod random;
 pub(crate) mod re;
+pub(crate) mod r#struct;
 pub(crate) mod sys;
 pub(crate) mod time;
 pub(crate) mod tomllib;
@@ -46,6 +47,7 @@ pub(crate) mod unicodedata;
 /// Built-in modules that can be imported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StandardLib {
+    Struct,
     /// The `sys` module providing system-specific parameters and functions.
     Sys,
     /// The `typing` module providing type hints support.
@@ -115,6 +117,7 @@ impl StandardLib {
     /// Resolves a module name without depending on enum discriminant order.
     pub fn from_static(name: StaticStrings) -> Option<Self> {
         match name {
+            StaticStrings::Struct => Some(Self::Struct),
             StaticStrings::Sys => Some(Self::Sys),
             StaticStrings::Typing => Some(Self::Typing),
             StaticStrings::Asyncio => Some(Self::Asyncio),
@@ -158,6 +161,7 @@ impl StandardLib {
     /// Creates a new instance of this module on the heap.
     pub fn create(self, vm: &mut VM<'_>) -> HeapId {
         match self {
+            Self::Struct => r#struct::create_module(vm),
             Self::Sys => sys::create_module(vm),
             Self::Typing => typing::create_module(vm),
             Self::Asyncio => asyncio::create_module(vm),
@@ -196,6 +200,7 @@ impl StandardLib {
 /// name, so renaming a variant needs `#[serde(alias)]` (see `DUMP_VERSION`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ModuleFunctions {
+    Struct(r#struct::StructFunctions),
     Asyncio(asyncio::AsyncioFunctions),
     Collections(collections::CollectionsFunctions),
     Json(json::JsonFunctions),
@@ -236,6 +241,7 @@ pub(crate) enum ModuleFunctions {
 impl fmt::Display for ModuleFunctions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Struct(func) => write!(f, "{func}"),
             Self::Asyncio(func) => write!(f, "{func}"),
             Self::Collections(func) => write!(f, "{func}"),
             Self::Json(func) => write!(f, "{func}"),
@@ -274,6 +280,7 @@ impl ModuleFunctions {
     /// require host involvement (e.g., `os.getenv()` needs the host to provide environment variables).
     pub fn call(self, vm: &mut VM<'_>, args: ArgValues) -> RunResult<CallResult> {
         match self {
+            Self::Struct(functions) => r#struct::call(vm, functions, args).map(CallResult::Value),
             Self::Asyncio(functions) => asyncio::call(vm, functions, args),
             Self::Collections(functions) => collections::call(vm, functions, args).map(CallResult::Value),
             Self::Json(functions) => json::call(vm, functions, args),

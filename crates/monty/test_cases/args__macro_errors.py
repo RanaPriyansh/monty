@@ -18,6 +18,7 @@ import datetime
 import json
 import math
 import re
+import struct
 import sys
 import unicodedata
 
@@ -1059,3 +1060,21 @@ for f, name in [
             assert False, 'expected failure'
         except error as exc:
             assert str(exc) == message
+
+try:
+    struct.pack()
+    assert False, 'missing format must fail'
+except TypeError as error:
+    assert str(error) == 'missing format argument'
+
+try:
+    struct.pack('Z', 1)
+    assert False, 'invalid format must precede item count'
+except struct.error as error:
+    assert str(error) == 'bad char in struct format'
+
+try:
+    struct.pack('I', 1, 2)
+    assert False, 'item count must fail'
+except struct.error as error:
+    assert str(error) == 'pack expected 1 items for packing (got 2)'

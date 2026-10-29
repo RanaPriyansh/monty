@@ -118,6 +118,15 @@ pub fn exc_monty_to_py(py: Python<'_>, mut exc: MontyException) -> PyErr {
                 exceptions::PyException::new_err(msg)
             }
         }
+        ExcType::StructError => {
+            if let Ok(cls) = get_struct_error(py)
+                && let Ok(instance) = cls.call1((PyString::new(py, &msg),))
+            {
+                PyErr::from_value(instance)
+            } else {
+                exceptions::PyException::new_err(msg)
+            }
+        }
         ExcType::DecimalException
         | ExcType::DecimalClamped
         | ExcType::DecimalInvalidOperation
@@ -463,6 +472,8 @@ fn py_err_to_exc_type(exc: &Bound<'_, exceptions::PyBaseException>) -> ExcType {
             ExcType::RePatternError
         } else if is_csv_error(exc) {
             ExcType::CsvError
+        } else if get_struct_error(exc.py()).is_ok_and(|cls| exc.is_instance(cls).unwrap_or(false)) {
+            ExcType::StructError
         } else {
             ExcType::Exception
         }
@@ -569,6 +580,11 @@ fn is_csv_error(exc: &Bound<'_, exceptions::PyBaseException>) -> bool {
 fn get_csv_error(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
     static CSV_ERROR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
     CSV_ERROR.import(py, "csv", "Error")
+}
+
+fn get_struct_error(py: Python<'_>) -> PyResult<&Bound<'_, PyAny>> {
+    static STRUCT_ERROR: PyOnceLock<Py<PyAny>> = PyOnceLock::new();
+    STRUCT_ERROR.import(py, "struct", "error")
 }
 
 /// Returns the cached `re.PatternError` class (named `re.error` before 3.13).

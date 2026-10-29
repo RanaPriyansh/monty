@@ -388,6 +388,8 @@ pub enum ExcType {
     /// older code. Monty exposes it for the same reason.
     #[strum(serialize = "binascii.Incomplete")]
     BinasciiIncomplete,
+    #[strum(serialize = "struct.error")]
+    StructError,
 
     // --- csv module ---
     /// `csv.Error` - raised by the `csv` readers and writers for malformed data
