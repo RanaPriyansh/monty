@@ -16,6 +16,8 @@ names = ['x', 'z', '!']
 byte_names = [b'x', b'z', b'!']
 empty_pattern_names = ['x', 'z', '!', '']
 byte_empty_pattern_names = [b'x', b'z', b'!', b'']
+boundary_names = ['-', 'x', 'z', '!', '']
+byte_boundary_names = [b'-', b'x', b'z', b'!', b'']
 
 observed = {
     'translate': fnmatch.translate(pattern),
@@ -35,6 +37,17 @@ observed = {
         'fnmatchcase': {name: fnmatch.fnmatchcase(name, b'[b-a!]') for name in byte_empty_pattern_names},
         'fnmatch': {name: fnmatch.fnmatch(name, b'[b-a!]') for name in byte_empty_pattern_names},
         'filter': fnmatch.filter(byte_empty_pattern_names, b'[b-a!]'),
+    },
+    'first_boundary': {
+        'translate': fnmatch.translate('[b-a!-x]'),
+        'fnmatchcase': {name: fnmatch.fnmatchcase(name, '[b-a!-x]') for name in boundary_names},
+        'fnmatch': {name: fnmatch.fnmatch(name, '[b-a!-x]') for name in boundary_names},
+        'filter': fnmatch.filter(boundary_names, '[b-a!-x]'),
+    },
+    'bytes_first_boundary': {
+        'fnmatchcase': {name: fnmatch.fnmatchcase(name, b'[b-a!-x]') for name in byte_boundary_names},
+        'fnmatch': {name: fnmatch.fnmatch(name, b'[b-a!-x]') for name in byte_boundary_names},
+        'filter': fnmatch.filter(byte_boundary_names, b'[b-a!-x]'),
     },
 }
 
@@ -56,6 +69,17 @@ expected = {
         'fnmatchcase': {b'x': True, b'z': True, b'!': True, b'': False},
         'fnmatch': {b'x': True, b'z': True, b'!': True, b'': False},
         'filter': [b'x', b'z', b'!'],
+    },
+    'first_boundary': {
+        'translate': r'(?s:[^-x])\z',
+        'fnmatchcase': {'-': False, 'x': False, 'z': True, '!': True, '': False},
+        'fnmatch': {'-': False, 'x': False, 'z': True, '!': True, '': False},
+        'filter': ['z', '!'],
+    },
+    'bytes_first_boundary': {
+        'fnmatchcase': {b'-': False, b'x': False, b'z': True, b'!': True, b'': False},
+        'fnmatch': {b'-': False, b'x': False, b'z': True, b'!': True, b'': False},
+        'filter': [b'z', b'!'],
     },
 }
 
