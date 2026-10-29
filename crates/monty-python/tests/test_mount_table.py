@@ -17,6 +17,7 @@ import sys
 import tempfile
 from collections.abc import Generator
 from pathlib import Path, PurePosixPath
+from typing import Literal
 
 import pytest
 from conftest import RunMonty
@@ -830,3 +831,20 @@ def test_path_length_limits_are_mount_policy(monty_run: RunMonty, test_dir: Path
         "OSError: [Errno 36] File name too long: '/other/aaaaaaaaaaaaa…aaaaaaaaaaaaaaaaaaaa'"
     )
     assert seen == [PurePosixPath(long_path)]
+
+
+def test_physical_default_text_read_normalizes_special_content(test_dir: Path):
+    raw = 'line1\nline2\ttab\r\nwindows'.encode('utf-8')
+    (test_dir / 'special.txt').write_bytes(raw)
+    assert (test_dir / 'special.txt').read_text(encoding='utf-8') == snapshot('line1\nline2\ttab\nwindows')
+
+
+@pytest.mark.parametrize('mode', ['read-only', 'read-write', 'overlay'], ids=['read-only', 'read-write', 'overlay'])
+def test_read_text_converts_newlines_for_mount_dir(
+    monty_run: RunMonty, test_dir: Path, mode: Literal['read-only', 'read-write', 'overlay']
+):
+    raw = b'head\r\nbody\rlast\r\r\nend\r'
+    (test_dir / 'newlines.txt').write_bytes(raw)
+    md = MountDir(host_path=test_dir, virtual_path='/data', mode=mode)
+    result = monty_run("from pathlib import Path; Path('/data/newlines.txt').read_text()", mount=md)
+    assert result == snapshot('head\nbody\nlast\n\nend\n')
