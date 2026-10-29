@@ -44,7 +44,12 @@ use crate::{
         random::RandomRetry,
         time::ClockReading,
     },
-    types::{Path, Type, dir_scan::ScanEffect, file::FileName, random::RandomTarget},
+    types::{
+        Path, Type,
+        dir_scan::ScanEffect,
+        file::{FileName, translate_newlines},
+        random::RandomTarget,
+    },
     value::Value,
     virtual_path::posix_join,
 };
@@ -276,7 +281,7 @@ fn read_text_reply(value: MontyObject) -> MontyObject {
     if !text.contains('\r') {
         return value;
     }
-    MontyObject::string(crate::types::file::translate_newlines(text))
+    MontyObject::string(translate_newlines(text))
 }
 
 /// What a [`PreConversionEffect`] makes of the host's reply: the value the
