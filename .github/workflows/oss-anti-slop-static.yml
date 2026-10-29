@@ -120,8 +120,8 @@ jobs:
 
           run_capture control-json json "$artifacts/anti-slop-control.ts"
           run_capture control-unix unix "$artifacts/anti-slop-control.ts"
-          run_capture full-package json ../source/crates/monty-js
-          run_capture external-module json ../source/crates/monty-js/ts/externalModule.ts
+          run_capture full-package json "$GITHUB_WORKSPACE/source/crates/monty-js"
+          run_capture external-module json "$GITHUB_WORKSPACE/source/crates/monty-js/ts/externalModule.ts"
 
           control_json_status=$(cat "$artifacts/control-json.status")
           control_unix_status=$(cat "$artifacts/control-unix.status")
@@ -129,7 +129,7 @@ jobs:
           control_json_error=0
           if json_is_valid "$artifacts/control-json.stdout" 1; then
             control_json_valid=1
-            if jq -e 'any(.diagnostics[]; .severity == "error" and (.filename | endswith("anti-slop-control.ts")))' \
+            if jq -e 'any(.diagnostics[]; .severity == "error" and .code == "anti-slop(no-runtime-typeof)" and (.filename | endswith("anti-slop-control.ts")))' \
               "$artifacts/control-json.stdout" >/dev/null; then
               control_json_error=1
             fi
@@ -140,7 +140,7 @@ jobs:
             && (( control_unix_status != 0 )) \
             && (( control_json_valid == 1 )) \
             && (( control_json_error == 1 )) \
-            && grep -Eq 'anti-slop-control\.ts:[0-9]+:[0-9]+:.*\[Error/anti-slop/no-runtime-typeof\]$' \
+            && grep -Eq 'anti-slop-control\.ts:[0-9]+:[0-9]+:.*\[Error/anti-slop\(no-runtime-typeof\)\]$' \
               "$artifacts/control-unix.stdout"; then
             printf 'PASS: generated control failed with anti-slop/no-runtime-typeof. JSON and Unix statuses: %s, %s.\n' \
               "$control_json_status" "$control_unix_status" >> "$artifacts/summary.txt"
