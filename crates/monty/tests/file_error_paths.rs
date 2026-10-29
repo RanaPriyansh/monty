@@ -931,38 +931,50 @@ fn file_sequence_host_error_then_retry() {
 }
 
 #[test]
-fn file_sequence_wrong_response_type_then_retry() {
+fn file_sequence_wrong_response_type_returns_runtime_error() {
     for constructor in ["list", "tuple"] {
         for mode in ["r", "rb"] {
+            let mut repl = MontyRepl::new("test.py", ResourceTracker::default(), CompileOptions::default());
+            #[cfg(feature = "ref-count-return")]
+            let before = repl.heap_entry_count();
             let code = format!(
-                "f = open('/x.txt', '{mode}')\ntry:\n    {constructor}(f)\nexcept TypeError:\n    pass\n{constructor}(f)\n"
+                "f = open('/x.txt', '{mode}')\ncaught = False\ntry:\n    {constructor}(f)\nexcept BaseException:\n    caught = True\n    raise\n"
             );
-            let first_read = start_file_sequence(&code, mode)
-                .into_os_call()
-                .expect("expected initial read");
+            let progress = repl.feed_start(&code, vec![], PrintWriter::Stdout).unwrap();
+            let ReplProgress::OsCall(open) = progress else {
+                panic!("expected Open OsCall, got {progress:?}");
+            };
+            let progress = open
+                .resume(
+                    MontyObject::file_handle(file_handle("/x.txt", mode)),
+                    PrintWriter::Stdout,
+                )
+                .unwrap();
+            let ReplProgress::OsCall(read) = progress else {
+                panic!("expected read OsCall, got {progress:?}");
+            };
             let expected_io = if mode == "rb" {
                 "Path.read_bytes"
             } else {
                 "Path.read_text"
             };
-            assert_eq!(first_read.function_call.name(), expected_io);
-            let retry = first_read
-                .resume(MontyObject::int(42), PrintWriter::Stdout)
-                .unwrap()
-                .into_os_call()
-                .expect("wrong host type must leave the file retryable");
-            assert_eq!(retry.function_call.name(), expected_io);
-            let empty = if mode == "rb" {
-                MontyObject::bytes(vec![])
-            } else {
-                MontyObject::string(String::new())
-            };
-            let result = retry
-                .resume(empty, PrintWriter::Stdout)
-                .unwrap()
-                .into_complete()
-                .expect("expected Complete after valid empty reply");
-            assert_eq!(result, file_sequence_value(constructor, vec![]));
+            assert_eq!(read.function_call.name(), expected_io);
+            let error = read
+                .resume(MontyObject::int(17), PrintWriter::Stdout)
+                .expect_err("an integer OS reply must fail before buffer installation");
+            assert_eq!(error.error.exc_type(), ExcType::RuntimeError);
+            assert_eq!(
+                error.error.message(),
+                Some("Internal error in monty: install_buffer: OS result must be a string or bytes value")
+            );
+            let mut repl = error.repl;
+            assert_eq!(
+                repl.feed_run("assert caught is False\nf = None\n1 + 1", vec![], PrintWriter::Stdout,)
+                    .unwrap(),
+                MontyObject::int(2)
+            );
+            #[cfg(feature = "ref-count-return")]
+            assert_eq!(repl.heap_entry_count(), before);
         }
     }
 }
@@ -1116,12 +1128,13 @@ fn assert_file_sequence_outcomes(constructor: &str) {
                 Ok(progress) => {
                     assert_eq!(outcome, "success");
                     let (repl, result) = progress.into_complete().expect("expected completed sequence");
+                    let first_line = if constructor == "csv.reader" { "one" } else { "one\n" };
                     assert_eq!(
                         result,
                         file_sequence_value(
                             constructor,
                             vec![
-                                MontyObject::string("one\n".to_owned()),
+                                MontyObject::string(first_line.to_owned()),
                                 MontyObject::string("two".to_owned())
                             ],
                         )
@@ -1131,11 +1144,17 @@ fn assert_file_sequence_outcomes(constructor: &str) {
                 Err(error) => {
                     let expected_type = match outcome {
                         "host-error" => ExcType::OSError,
-                        "wrong-type" => ExcType::TypeError,
+                        "wrong-type" => ExcType::RuntimeError,
                         "future" => ExcType::RuntimeError,
                         _ => panic!("successful response failed"),
                     };
                     assert_eq!(error.error.exc_type(), expected_type);
+                    if outcome == "wrong-type" {
+                        assert_eq!(
+                            error.error.message(),
+                            Some("Internal error in monty: install_buffer: OS result must be a string or bytes value")
+                        );
+                    }
                     error.repl
                 }
             }
