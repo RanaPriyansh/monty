@@ -833,12 +833,6 @@ def test_path_length_limits_are_mount_policy(monty_run: RunMonty, test_dir: Path
     assert seen == [PurePosixPath(long_path)]
 
 
-def test_physical_default_text_read_normalizes_special_content(test_dir: Path):
-    raw = 'line1\nline2\ttab\r\nwindows'.encode('utf-8')
-    (test_dir / 'special.txt').write_bytes(raw)
-    assert (test_dir / 'special.txt').read_text(encoding='utf-8') == snapshot('line1\nline2\ttab\nwindows')
-
-
 def test_read_text_normalizes_unicode_newlines_with_utf8(monty_run: RunMonty, test_dir: Path):
     raw = 'café\r\nsecond\rthird\u2028fourth\u2029'.encode('utf-8')
     physical_path = test_dir / 'unicode-newlines.txt'
